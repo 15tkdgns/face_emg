@@ -14,27 +14,30 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import EmotionDataset, SAMPLE_EMOTIONS
+from dataset import EmotionDataset, EMOTIONS, SAMPLE_EMOTIONS
 from model import EmotionClassifier
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument('--data_root',   default='New_sample_3')
-    p.add_argument('--backbone',    default='efficientnet_b0',
+    p.add_argument('--data_root',      default='New_sample_3')
+    p.add_argument('--new_label_root', default=None,
+                   help='새 7클래스 레이블 루트 (예: 라벨링데이터-.../라벨링데이터)')
+    p.add_argument('--emotions',       default=None, nargs='+',
+                   help='사용할 감정 목록. 미지정 시 new_label_root 있으면 7클래스, 없으면 4클래스')
+    p.add_argument('--backbone',       default='densenet121',
                    choices=['efficientnet_b0', 'densenet121', 'densenet169',
                             'resnet18', 'resnet50'])
-    p.add_argument('--epochs',      type=int, default=30)
-    p.add_argument('--batch_size',  type=int, default=32)
-    p.add_argument('--lr',          type=float, default=1e-4)
-    p.add_argument('--image_size',  type=int, default=224)
-    p.add_argument('--val_ratio',   type=float, default=0.2)
-    p.add_argument('--output_dir',  default=None)   # None → output/{backbone}/
-    p.add_argument('--num_workers', type=int, default=0)
-    # 전처리 옵션
-    p.add_argument('--use_clahe',   action='store_true', help='CLAHE 히스토그램 평활화')
-    p.add_argument('--use_edge',    action='store_true', help='엣지 채널 추가 (4ch)')
-    p.add_argument('--use_align',   action='store_true', help='mediapipe 얼굴 정렬')
+    p.add_argument('--epochs',         type=int, default=30)
+    p.add_argument('--batch_size',     type=int, default=32)
+    p.add_argument('--lr',             type=float, default=1e-4)
+    p.add_argument('--image_size',     type=int, default=224)
+    p.add_argument('--val_ratio',      type=float, default=0.2)
+    p.add_argument('--output_dir',     default=None)
+    p.add_argument('--num_workers',    type=int, default=0)
+    p.add_argument('--use_clahe',      action='store_true')
+    p.add_argument('--use_edge',       action='store_true')
+    p.add_argument('--use_align',      action='store_true')
     return p.parse_args()
 
 
@@ -82,30 +85,57 @@ def main():
         args.output_dir = os.path.join('output', args.backbone + suffix)
 
     os.makedirs(args.output_dir, exist_ok=True)
+    # 감정 목록 결정
+    if args.emotions:
+        use_emotions = args.emotions
+    elif args.new_label_root:
+        use_emotions = EMOTIONS          # 7클래스 시도 (이미지 없는 클래스는 자동 스킵)
+    else:
+        use_emotions = SAMPLE_EMOTIONS   # 기존 4클래스
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     in_channels = 4 if args.use_edge else 3
 
     print(f'Device: {device}')
     print(f'Backbone: {args.backbone}  |  in_channels: {in_channels}')
     print(f'전처리: clahe={args.use_clahe}, edge={args.use_edge}, align={args.use_align}')
+    print(f'감정 클래스 (요청): {use_emotions}')
     print(f'Output: {args.output_dir}')
 
     ds_kwargs = dict(
-        data_root=args.data_root, emotions=SAMPLE_EMOTIONS,
-        val_ratio=args.val_ratio, image_size=args.image_size,
-        use_clahe=args.use_clahe, use_edge=args.use_edge, use_align=args.use_align,
+        data_root=args.data_root,
+        new_label_root=args.new_label_root,
+        emotions=use_emotions,
+        val_ratio=args.val_ratio,
+        image_size=args.image_size,
+        use_clahe=args.use_clahe,
+        use_edge=args.use_edge,
+        use_align=args.use_align,
     )
     train_ds = EmotionDataset(split='train', augment=True,  **ds_kwargs)
     val_ds   = EmotionDataset(split='val',   augment=False, **ds_kwargs)
 
+    # 실제 로드된 클래스만 사용
+    loaded_emotions = [e for e in use_emotions if e in train_ds.class_counts()]
+    num_classes = len(loaded_emotions)
+    if num_classes == 0:
+        raise RuntimeError('로드된 이미지가 없습니다. 데이터 경로를 확인하세요.')
+
+    print(f'\n실제 로드된 클래스 ({num_classes}개): {loaded_emotions}')
     print(f'Train: {len(train_ds)}장  |  Val: {len(val_ds)}장')
     print('클래스별:', train_ds.class_counts())
 
+    # label 인덱스를 로드된 클래스 기준으로 재매핑
+    if loaded_emotions != use_emotions:
+        label_map = {use_emotions.index(e): i for i, e in enumerate(loaded_emotions)}
+        for s in train_ds.samples + val_ds.samples:
+            s['label'] = label_map[s['label']]
+
     counts = train_ds.class_counts()
     class_weights = torch.tensor(
-        [1.0 / counts.get(e, 1) for e in SAMPLE_EMOTIONS], dtype=torch.float32
+        [1.0 / counts.get(e, 1) for e in loaded_emotions], dtype=torch.float32
     ).to(device)
-    class_weights = class_weights / class_weights.sum() * len(SAMPLE_EMOTIONS)
+    class_weights = class_weights / class_weights.sum() * num_classes
 
     train_loader = DataLoader(train_ds, args.batch_size, shuffle=True,
                               num_workers=args.num_workers, pin_memory=(device.type=='cuda'))
@@ -113,7 +143,7 @@ def main():
                               num_workers=args.num_workers)
 
     model = EmotionClassifier(
-        len(SAMPLE_EMOTIONS), backbone=args.backbone,
+        num_classes, backbone=args.backbone,
         pretrained=True, in_channels=in_channels,
     ).to(device)
 
@@ -154,8 +184,8 @@ def main():
             torch.save({
                 'epoch': epoch,
                 'backbone': args.backbone,
-                'num_classes': len(SAMPLE_EMOTIONS),
-                'emotions': SAMPLE_EMOTIONS,
+                'num_classes': num_classes,
+                'emotions': loaded_emotions,
                 'in_channels': in_channels,
                 'use_clahe': args.use_clahe,
                 'use_edge': args.use_edge,

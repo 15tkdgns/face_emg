@@ -36,8 +36,10 @@ def _consensus_box(item: dict):
 
 
 def _load_json(path: str) -> list:
-    with open(path, encoding='utf-8') as f:
-        return json.load(f)
+    """UTF-8 / UTF-8-BOM / unicode escape 모두 지원."""
+    with open(path, 'rb') as f:
+        raw = f.read()
+    return json.loads(raw)
 
 
 def apply_clahe(img_rgb: np.ndarray) -> np.ndarray:
@@ -109,14 +111,21 @@ class EmotionDataset(Dataset):
         use_edge: bool = False,
         use_align: bool = False,
         seed: int = 42,
+        new_label_root: str = None,
     ):
-        self.data_root = data_root
-        self.emotions = emotions or SAMPLE_EMOTIONS
-        self.split = split
-        self.image_size = image_size
-        self.use_clahe = use_clahe
-        self.use_edge = use_edge
-        self.use_align = use_align
+        """
+        data_root       : New_sample_3 폴더 경로 (원천데이터/라벨링데이터 포함)
+        new_label_root  : 새 구조 레이블 루트 (예: 라벨링데이터-.../라벨링데이터/)
+                          지정 시 JSON은 여기서, 이미지는 data_root/원천데이터/EMOIMG_{e}_SAMPLE/ 우선 검색
+        """
+        self.data_root      = data_root
+        self.new_label_root = new_label_root
+        self.emotions       = emotions or SAMPLE_EMOTIONS
+        self.split          = split
+        self.image_size     = image_size
+        self.use_clahe      = use_clahe
+        self.use_edge       = use_edge
+        self.use_align      = use_align
 
         self.samples = self._build_samples(val_ratio, seed)
 
@@ -137,18 +146,41 @@ class EmotionDataset(Dataset):
             (aug_transforms if split == 'train' and augment else base_transforms) + tail
         )
 
+    def _find_label_and_img_dir(self, emotion: str):
+        """(json_path, img_dir) 반환. 없으면 (None, None)."""
+        # ── 새 구조: new_label_root/{emotion}/img_emotion_training_data({emotion}).json ──
+        if self.new_label_root:
+            new_json = os.path.join(self.new_label_root, emotion,
+                                    f'img_emotion_training_data({emotion}).json')
+            # 이미지: data_root/원천데이터/EMOIMG_{emotion}_SAMPLE 우선,
+            #         없으면 new_label_root/../원천데이터/{emotion}
+            img_dir_legacy = os.path.join(self.data_root, '원천데이터', f'EMOIMG_{emotion}_SAMPLE')
+            img_dir_new    = os.path.join(os.path.dirname(self.new_label_root), '원천데이터', emotion)
+            img_dir = img_dir_legacy if os.path.isdir(img_dir_legacy) else (
+                      img_dir_new    if os.path.isdir(img_dir_new)    else None)
+            if os.path.isfile(new_json) and img_dir:
+                return new_json, img_dir
+
+        # ── 기존 구조: data_root/라벨링데이터/EMOIMG_{emotion}_SAMPLE/*.json ──
+        label_dir = os.path.join(self.data_root, '라벨링데이터', f'EMOIMG_{emotion}_SAMPLE')
+        img_dir   = os.path.join(self.data_root, '원천데이터',   f'EMOIMG_{emotion}_SAMPLE')
+        if os.path.isdir(label_dir) and os.path.isdir(img_dir):
+            json_files = [f for f in os.listdir(label_dir) if f.endswith('.json')]
+            if json_files:
+                return os.path.join(label_dir, json_files[0]), img_dir
+
+        return None, None
+
     def _build_samples(self, val_ratio, seed):
         all_samples = []
         for emotion in self.emotions:
-            img_dir   = os.path.join(self.data_root, '원천데이터',   f'EMOIMG_{emotion}_SAMPLE')
-            label_dir = os.path.join(self.data_root, '라벨링데이터', f'EMOIMG_{emotion}_SAMPLE')
-            if not os.path.isdir(img_dir) or not os.path.isdir(label_dir):
+            json_path, img_dir = self._find_label_and_img_dir(emotion)
+            if json_path is None:
+                print(f'  [{emotion}] 데이터 없음 → 건너뜀')
                 continue
-            json_files = [f for f in os.listdir(label_dir) if f.endswith('.json')]
-            if not json_files:
-                continue
-            records = _load_json(os.path.join(label_dir, json_files[0]))
+            records  = _load_json(json_path)
             existing = set(os.listdir(img_dir))
+            added = 0
             for rec in records:
                 fname = rec.get('filename', '')
                 if fname not in existing:
@@ -164,6 +196,8 @@ class EmotionDataset(Dataset):
                     'gender': rec.get('gender', ''),
                     'age': rec.get('age', -1),
                 })
+                added += 1
+            print(f'  [{emotion}] {added}장 로드')
 
         rng = np.random.RandomState(seed)
         idx = np.arange(len(all_samples))
@@ -220,6 +254,120 @@ class EmotionDataset(Dataset):
             tensor = rgb_tensor
 
         return tensor, item['label']
+
+    def class_counts(self) -> dict:
+        from collections import Counter
+        return dict(Counter(s['emotion'] for s in self.samples))
+
+
+class BibleDataset(Dataset):
+    """
+    바이블코딩 감정 데이터셋.
+    이미지가 이미 224x224 크롭 완료 → 얼굴 크롭 없이 전체 이미지 사용.
+
+    Args:
+        data_root  : 바이블코딩 폴더 경로 (샘플데이터/라벨링데이터 포함)
+        emotions   : 사용할 감정 목록 (None → EMOTIONS 7개)
+        split      : 'train' | 'val' | 'test' | 'all'
+        train_ratio: 학습 비율
+        val_ratio  : 검증 비율 (나머지는 test)
+        augment    : 학습 증강 여부
+        use_edge   : 엣지 채널 추가 (4ch)
+        seed       : random seed
+    """
+
+    def __init__(
+        self,
+        data_root: str,
+        emotions: list = None,
+        split: str = 'train',
+        train_ratio: float = 0.8,
+        val_ratio: float = 0.1,
+        augment: bool = True,
+        use_edge: bool = False,
+        seed: int = 42,
+    ):
+        self.data_root   = data_root
+        self.emotions    = emotions or EMOTIONS
+        self.split       = split
+        self.use_edge    = use_edge
+        self.image_size  = 224
+
+        self.samples = self._build_samples(train_ratio, val_ratio, seed)
+
+        aug_transforms = [
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
+            transforms.RandomRotation(10),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+            transforms.ToTensor(),
+            transforms.Normalize(IMG_MEAN, IMG_STD),
+        ]
+        base_transforms = [
+            transforms.ToPILImage(),
+            transforms.ToTensor(),
+            transforms.Normalize(IMG_MEAN, IMG_STD),
+        ]
+        self.transform = transforms.Compose(
+            aug_transforms if split == 'train' and augment else base_transforms
+        )
+
+    def _build_samples(self, train_ratio, val_ratio, seed):
+        all_samples = []
+        img_base = os.path.join(self.data_root, '샘플데이터')
+        for emotion in self.emotions:
+            img_dir = os.path.join(img_base, emotion)
+            if not os.path.isdir(img_dir):
+                print(f'  [{emotion}] 이미지 없음 → 건너뜀')
+                continue
+            files = sorted([
+                f for f in os.listdir(img_dir)
+                if f.lower().endswith(('.jpg', '.jpeg', '.png'))
+            ])
+            for fn in files:
+                all_samples.append({
+                    'image_path': os.path.join(img_dir, fn),
+                    'label':      self.emotions.index(emotion),
+                    'emotion':    emotion,
+                })
+            print(f'  [{emotion}] {len(files)}장 로드')
+
+        rng = np.random.RandomState(seed)
+        # 클래스별로 분할 (stratified)
+        train, val, test = [], [], []
+        for emotion in self.emotions:
+            cls = [s for s in all_samples if s['emotion'] == emotion]
+            idx = np.arange(len(cls))
+            rng.shuffle(idx)
+            n_train = int(len(idx) * train_ratio)
+            n_val   = int(len(idx) * val_ratio)
+            train += [cls[i] for i in idx[:n_train]]
+            val   += [cls[i] for i in idx[n_train:n_train + n_val]]
+            test  += [cls[i] for i in idx[n_train + n_val:]]
+
+        return {'train': train, 'val': val, 'test': test, 'all': all_samples}[self.split]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        with open(item['image_path'], 'rb') as f:
+            buf = np.frombuffer(f.read(), dtype=np.uint8)
+        img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        if img is None:
+            raise IOError(f"이미지 읽기 실패: {item['image_path']}")
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        rgb_tensor = self.transform(img)
+
+        if self.use_edge:
+            edge = extract_edge(img).astype(np.float32) / 255.0
+            edge_tensor = torch.from_numpy(edge).unsqueeze(0)
+            return torch.cat([rgb_tensor, edge_tensor], dim=0), item['label']
+
+        return rgb_tensor, item['label']
 
     def class_counts(self) -> dict:
         from collections import Counter

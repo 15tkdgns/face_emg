@@ -1,5 +1,22 @@
 # 환경 변수 및 비밀키
 .env
+client_secret_*.json
+download_state.json
+
+# Claude 내부 파일
+.claude/
+
+# 실행파일 / 임시파일
+aihubshell
+"import os.py"
+
+# ONNX 모델 (대용량)
+onnx_models/
+
+# 데이터셋 원본 (대용량)
+바이블코딩/샘플데이터/
+바이블코딩/라벨링데이터/
+라벨링데이터-*/
 
 # 학습된 모델 가중치
 *.pth
