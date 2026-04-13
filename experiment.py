@@ -26,7 +26,7 @@ from sklearn.metrics import f1_score, classification_report, confusion_matrix
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import BibleDataset, EMOTIONS
+from dataset import BibleDataset, AiHubDataset, EMOTIONS
 from losses import build_criterion
 from model import EmotionClassifier
 
@@ -45,11 +45,14 @@ def load_config(path: str) -> dict:
         cfg = yaml.safe_load(f)
     # 기본값
     defaults = {
-        'data_root':   'バイブルコーディング',
-        'emotions':    EMOTIONS,
-        'train_ratio': 0.8,
-        'val_ratio':   0.1,
-        'backbone':    'densenet121',
+        'dataset':      'bible',         # 'bible' | 'aihub'
+        'data_root':    '바이블코딩',
+        'emotions':     EMOTIONS,
+        'train_ratio':  0.8,
+        'val_ratio':    0.1,
+        'val_test_ratio': 0.5,           # aihub 전용
+        'max_per_class': None,           # aihub 언더샘플링
+        'backbone':     'densenet121',
         'loss':        'ce',          # 'ce' | 'focal'
         'focal_gamma': 2.0,
         'epochs':      30,
@@ -169,18 +172,31 @@ def run_experiment(cfg: dict) -> dict:
     print(f"{'='*60}")
 
     # 데이터셋
-    ds_kwargs = dict(
-        data_root=cfg['data_root'],
-        emotions=cfg['emotions'],
-        train_ratio=cfg['train_ratio'],
-        val_ratio=cfg['val_ratio'],
-        use_edge=cfg['use_edge'],
-        seed=cfg['seed'],
-    )
     print('데이터 로딩...')
-    train_ds = BibleDataset(split='train', augment=True,  **ds_kwargs)
-    val_ds   = BibleDataset(split='val',   augment=False, **ds_kwargs)
-    test_ds  = BibleDataset(split='test',  augment=False, **ds_kwargs)
+    if cfg.get('dataset', 'bible') == 'aihub':
+        ds_kwargs = dict(
+            data_root=cfg['data_root'],
+            emotions=cfg['emotions'],
+            val_test_ratio=cfg['val_test_ratio'],
+            max_per_class=cfg['max_per_class'] or None,
+            use_edge=cfg['use_edge'],
+            seed=cfg['seed'],
+        )
+        train_ds = AiHubDataset(split='train', augment=True,  **ds_kwargs)
+        val_ds   = AiHubDataset(split='val',   augment=False, **ds_kwargs)
+        test_ds  = AiHubDataset(split='test',  augment=False, **ds_kwargs)
+    else:
+        ds_kwargs = dict(
+            data_root=cfg['data_root'],
+            emotions=cfg['emotions'],
+            train_ratio=cfg['train_ratio'],
+            val_ratio=cfg['val_ratio'],
+            use_edge=cfg['use_edge'],
+            seed=cfg['seed'],
+        )
+        train_ds = BibleDataset(split='train', augment=True,  **ds_kwargs)
+        val_ds   = BibleDataset(split='val',   augment=False, **ds_kwargs)
+        test_ds  = BibleDataset(split='test',  augment=False, **ds_kwargs)
 
     emotions = cfg['emotions']
     num_classes = len(emotions)

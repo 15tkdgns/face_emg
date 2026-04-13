@@ -372,3 +372,125 @@ class BibleDataset(Dataset):
     def class_counts(self) -> dict:
         from collections import Counter
         return dict(Counter(s['emotion'] for s in self.samples))
+
+
+class AiHubDataset(Dataset):
+    """
+    AI Hub 한국인 감정인식 데이터셋 (aihub/prepare.py로 전처리 완료된 데이터 사용).
+
+    전처리 후 구조:
+        {data_root}/train/{emotion}/*.jpg
+        {data_root}/val/{emotion}/*.jpg
+
+    Args:
+        data_root      : prepare.py --out 경로 (예: G:/aihub_cropped)
+        emotions       : 사용할 감정 목록 (None → EMOTIONS 7개)
+        split          : 'train' | 'val' | 'test'
+                         ※ val/test는 val 폴더를 val_test_ratio로 분리
+        val_test_ratio : val 폴더를 검증:테스트로 나누는 비율 (기본 0.5)
+        max_per_class  : 클래스당 최대 샘플 수 (None=전체)
+        augment        : 학습 증강 여부
+        use_edge       : 엣지 채널 추가 (4ch)
+        seed           : random seed
+    """
+
+    def __init__(
+        self,
+        data_root: str,
+        emotions: list = None,
+        split: str = 'train',
+        val_test_ratio: float = 0.5,
+        max_per_class: int = None,
+        augment: bool = True,
+        use_edge: bool = False,
+        seed: int = 42,
+    ):
+        self.data_root = data_root
+        self.emotions  = emotions or EMOTIONS
+        self.split     = split
+        self.use_edge  = use_edge
+
+        self.samples = self._build_samples(val_test_ratio, max_per_class, seed)
+
+        aug_transforms = [
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
+            transforms.RandomRotation(10),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+            transforms.ToTensor(),
+            transforms.Normalize(IMG_MEAN, IMG_STD),
+        ]
+        base_transforms = [
+            transforms.ToPILImage(),
+            transforms.ToTensor(),
+            transforms.Normalize(IMG_MEAN, IMG_STD),
+        ]
+        self.transform = transforms.Compose(
+            aug_transforms if split == 'train' and augment else base_transforms
+        )
+
+    def _build_samples(self, val_test_ratio, max_per_class, seed):
+        rng = np.random.RandomState(seed)
+        folder = 'train' if self.split == 'train' else 'val'
+
+        all_samples = []
+        for emotion in self.emotions:
+            img_dir = os.path.join(self.data_root, folder, emotion)
+            if not os.path.isdir(img_dir):
+                print(f'  [{emotion}] 없음 ({img_dir})')
+                continue
+            files = sorted([
+                f for f in os.listdir(img_dir)
+                if f.lower().endswith(('.jpg', '.jpeg', '.png'))
+            ])
+            label = self.emotions.index(emotion)
+            for fn in files:
+                all_samples.append({
+                    'image_path': os.path.join(img_dir, fn),
+                    'label':      label,
+                    'emotion':    emotion,
+                })
+            print(f'  [{emotion}] {len(files)}장')
+
+        result = []
+        for emotion in self.emotions:
+            cls = [s for s in all_samples if s['emotion'] == emotion]
+            idx = np.arange(len(cls))
+            rng.shuffle(idx)
+            if max_per_class:
+                idx = idx[:max_per_class]
+            cls = [cls[i] for i in idx]
+
+            if self.split == 'train':
+                result.extend(cls)
+            else:
+                n_val = int(len(cls) * val_test_ratio)
+                if self.split == 'val':
+                    result.extend(cls[:n_val])
+                elif self.split == 'test':
+                    result.extend(cls[n_val:])
+
+        return result
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        img = cv2.imread(item['image_path'])
+        if img is None:
+            raise IOError(f"이미지 읽기 실패: {item['image_path']}")
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        rgb_tensor = self.transform(img)
+
+        if self.use_edge:
+            edge = extract_edge(img).astype(np.float32) / 255.0
+            edge_tensor = torch.from_numpy(edge).unsqueeze(0)
+            return torch.cat([rgb_tensor, edge_tensor], dim=0), item['label']
+
+        return rgb_tensor, item['label']
+
+    def class_counts(self) -> dict:
+        from collections import Counter
+        return dict(Counter(s['emotion'] for s in self.samples))
