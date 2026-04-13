@@ -1,74 +1,24 @@
 # kang_mingoo
 
-## Goal
-Build your own emotion classifier and compete with other members.
-Modify `model.py` freely — any architecture, any trick.
-
----
-
-## Folder Structure
-```
-kang_mingoo/
-├── model.py       ← YOUR model (edit freely)
-├── README.md      ← this file
-├── config.yaml    ← your training config (create this)
-└── results/       ← your output (create after training)
-    ├── best_model.pth
-    ├── result.json
-    └── confusion_matrix.png
-```
-
----
-
-## Shared Files You Need (from project root)
-| File | Role |
-|------|------|
-| `dataset.py` | Data loader (BibleDataset / AiHubDataset) |
-| `train.py` | Training loop |
-| `evaluate.py` | Accuracy / F1 / confusion matrix |
-| `losses.py` | Focal Loss |
-| `experiment.py` | Full pipeline runner (optional) |
-| `requirements.txt` | Package list |
-
----
-
-## Data Path
-```
-G:/내 드라이브/aihub_cropped/
-├── train/{기쁨,당황,분노,불안,상처,슬픔,중립}/  ← training images (max 16K/class)
-└── val/  {기쁨,당황,분노,불안,상처,슬픔,중립}/  ← validation images
-```
-
----
-
-## How to Run
-
-### Option A — use experiment.py with a config
+## How to run
 ```bash
-# 1. Create your config (copy and edit an existing one)
-cp configs/aihub_A_densenet121_ce.yaml kang_mingoo/config.yaml
-
-# 2. Edit kang_mingoo/config.yaml:
-#    output_dir: kang_mingoo/results
-
-# 3. Train
 python experiment.py --config kang_mingoo/config.yaml
 ```
 
-### Option B — write your own training script
-```bash
-python kang_mingoo/train_custom.py   # if you write one
-```
+## What to change
+Edit `config.yaml` — backbone, loss, lr, epochs, etc.
 
----
+| Option | Values |
+|--------|--------|
+| `backbone` | `efficientnet_b0` \| `densenet121` \| `densenet169` \| `resnet18` \| `resnet50` |
+| `loss` | `ce` \| `focal` |
+| `focal_gamma` | e.g. `1.0`, `2.0`, `5.0` |
+| `use_edge` | `true` \| `false` (adds Canny edge as 4th channel) |
+| `scheduler` | `cosine` \| `step` \| `none` |
 
-## Rules
-- Only edit files inside your own folder + `kang_mingoo/model.py`
-- Do NOT modify shared root files (dataset.py, train.py, etc.)
-- Save your best checkpoint to `kang_mingoo/results/best_model.pth`
-- Record final test accuracy and F1 in `kang_mingoo/results/result.json`
-
----
-
-## Comparison Metric
-Final ranking is based on **test accuracy** and **macro F1** on the shared AI Hub validation set.
+## Results
+Saved to `kang_mingoo/results/` after training:
+- `best_model.pth` — best checkpoint
+- `result.json` — test accuracy, F1, per-class F1
+- `confusion_matrix.png`
+- `grad_cam/` — Grad-CAM visualizations
