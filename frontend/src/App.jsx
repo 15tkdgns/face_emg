@@ -57,11 +57,11 @@ const TABS = [
 ]
 
 const TAB_HEADER = {
-  realtime: { title: '실시간 AI', sub: 'Real-time Detection' },
-  analyze:  { title: 'EmotionAI', sub: 'Face Emotion Recognition' },
-  models:   { title: '모델 비교', sub: 'Performance Benchmark' },
-  pipeline: { title: '파이프라인', sub: 'Data Pipeline' },
-  custom:   { title: '내 모델', sub: 'My Model Test' },
+  realtime: { title: 'Face-Actor', sub: 'Real-time Detection' },
+  analyze:  { title: 'Face-Actor', sub: 'Face Emotion Recognition' },
+  models:   { title: 'Face-Actor', sub: 'Performance Benchmark' },
+  pipeline: { title: 'Face-Actor', sub: 'Data Pipeline' },
+  custom:   { title: 'Face-Actor', sub: 'My Model Test' },
 }
 
 export default function App() {
@@ -71,23 +71,19 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-[100dvh] max-w-[480px] mx-auto relative overflow-hidden animated-bg">
-      {/* Ambient glow orbs */}
-      <div className="pointer-events-none absolute -top-32 -left-32 w-64 h-64 rounded-full bg-[#7C65F6]/10 blur-[100px]" />
-      <div className="pointer-events-none absolute top-1/2 -right-32 w-48 h-48 rounded-full bg-[#A78BFA]/8 blur-[80px]" />
-      <div className="pointer-events-none absolute -bottom-20 left-1/4 w-56 h-56 rounded-full bg-[#6366f1]/8 blur-[90px]" />
 
       {/* Header */}
-      <header className="relative z-10 px-5 pt-4 pb-3 flex items-center justify-between">
+      <header className="relative z-10 px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06]">
         <div>
-          <h1 className="text-xl font-extrabold gradient-text tracking-tight">
+          <h1 className="text-xl font-extrabold text-white tracking-tight">
             {header.title}
           </h1>
-          <p className="text-[10px] text-muted-foreground/60 font-medium mt-0.5 tracking-wide uppercase">
+          <p className="text-[10px] text-white/30 font-medium mt-0.5 tracking-wide uppercase">
             {header.sub}
           </p>
         </div>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#7C65F6] to-[#A78BFA] flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-[#7C65F6]/20">
-          AI
+        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-black text-xs font-bold">
+          FA
         </div>
       </header>
 
@@ -102,21 +98,21 @@ export default function App() {
 
       {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-[100] px-4 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
-        <div className="glass rounded-2xl flex items-stretch h-14 glow-primary">
+        <div className="rounded-2xl flex items-stretch h-14 bg-[#111111] border border-white/[0.08]">
           {TABS.map(t => {
             const active = tab === t.id
             return (
               <button
                 key={t.id}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 bg-transparent border-none cursor-pointer text-[10px] font-semibold transition-all duration-300 relative ${
-                  active ? 'text-[#A78BFA]' : 'text-muted-foreground/50 hover:text-muted-foreground'
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 bg-transparent border-none cursor-pointer text-[10px] font-semibold transition-all duration-200 relative ${
+                  active ? 'text-white' : 'text-white/25 hover:text-white/50'
                 }`}
                 onClick={() => setTab(t.id)}
               >
                 {active && (
-                  <div className="absolute -top-0.5 w-6 h-0.5 rounded-full bg-gradient-to-r from-[#7C65F6] to-[#A78BFA]" />
+                  <div className="absolute -top-0.5 w-6 h-0.5 rounded-full bg-white" />
                 )}
-                <div className={`transition-transform duration-300 ${active ? 'scale-110' : ''}`}>
+                <div className={`transition-transform duration-200 ${active ? 'scale-110' : ''}`}>
                   {t.icon}
                 </div>
                 <span>{t.label}</span>

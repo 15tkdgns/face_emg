@@ -5,13 +5,13 @@ import { api } from '../api'
 // ── 감정 정의 (백엔드 7클래스와 매핑) ─────────────────────────────
 // 백엔드 EMOTIONS_7 = ['기쁨', '당황', '분노', '불안', '상처', '슬픔', '중립']
 const EMOTIONS = [
-  { key: '기쁨', label: '기쁨',   emoji: '😄', color: '#FBBF24', bg: 'bg-amber-400',   bgLight: 'bg-amber-100' },
-  { key: '당황', label: '당황',   emoji: '😳', color: '#A78BFA', bg: 'bg-violet-400',  bgLight: 'bg-violet-100' },
-  { key: '분노', label: '분노',   emoji: '😡', color: '#F87171', bg: 'bg-red-400',     bgLight: 'bg-red-100' },
-  { key: '불안', label: '불안',   emoji: '😨', color: '#34D399', bg: 'bg-emerald-400', bgLight: 'bg-emerald-100' },
-  { key: '상처', label: '상처',   emoji: '😢', color: '#60A5FA', bg: 'bg-blue-400',    bgLight: 'bg-blue-100' },
-  { key: '슬픔', label: '슬픔',   emoji: '😿', color: '#818CF8', bg: 'bg-indigo-400',  bgLight: 'bg-indigo-100' },
-  { key: '중립', label: '중립',   emoji: '😐', color: '#94A3B8', bg: 'bg-slate-400',   bgLight: 'bg-slate-100' },
+  { key: '기쁨', label: '기쁨' },
+  { key: '당황', label: '당황' },
+  { key: '분노', label: '분노' },
+  { key: '불안', label: '불안' },
+  { key: '상처', label: '상처' },
+  { key: '슬픔', label: '슬픔' },
+  { key: '중립', label: '중립' },
 ]
 
 const ZERO_SCORES = EMOTIONS.reduce((a, e) => ({ ...a, [e.key]: 0 }), {})
@@ -22,41 +22,29 @@ function EmotionBar({ emotion, value, rank }) {
   const pct = Math.round(value * 100)
 
   return (
-    <div className="flex items-center gap-3 py-1.5 group">
-      <motion.div
-        className="text-xl w-7 text-center shrink-0"
-        animate={{ scale: isDominant ? [1, 1.15, 1] : 1 }}
-        transition={{ duration: 0.4, ease: 'easeInOut' }}
-      >
-        {emotion.emoji}
-      </motion.div>
+    <div className="flex items-center gap-3 py-1.5">
+      <span className="w-8 text-xs font-medium text-white/50 shrink-0">{emotion.label}</span>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between mb-1">
-          <span className="text-xs font-semibold text-slate-700">{emotion.label}</span>
-          <motion.span
-            className="text-xs font-bold tabular-nums text-slate-500"
-            key={pct}
-            initial={{ opacity: 0.5, y: -2 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            {pct}%
-          </motion.span>
-        </div>
-
-        <div className={`h-3 w-full rounded-full overflow-hidden ${emotion.bgLight}`}>
+        <div className="h-2 w-full rounded-full overflow-hidden bg-white/[0.06]">
           <motion.div
-            className={`h-full rounded-full ${emotion.bg}`}
+            className="h-full rounded-full bg-white"
             initial={{ width: 0 }}
-            animate={{ width: `${pct}%` }}
+            animate={{ width: `${pct}%`, opacity: isDominant ? 1 : 0.35 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            style={{
-              boxShadow: isDominant ? `0 0 12px ${emotion.color}60` : 'none',
-            }}
           />
         </div>
       </div>
+
+      <motion.span
+        className="w-10 text-right text-[11px] tabular-nums text-white/40 shrink-0"
+        key={pct}
+        initial={{ opacity: 0.5 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        {pct}%
+      </motion.span>
     </div>
   )
 }
@@ -82,9 +70,10 @@ export default function RealtimeTab() {
   // 로드 가능한 모델 목록 가져오기
   useEffect(() => {
     api.models().then(res => {
-      const loaded = (res.data.models || []).filter(m => m.loaded)
-      setAvailableModels(loaded)
-      if (loaded.length > 0 && !loaded.find(m => m.id === selectedModel)) {
+      const all = res.data.models || []
+      setAvailableModels(all)
+      const loaded = all.filter(m => m.loaded)
+      if (loaded.length > 0 && !all.find(m => m.id === selectedModel && m.loaded)) {
         setSelectedModel(loaded[0].id)
         selectedModelRef.current = loaded[0].id
       }
@@ -193,43 +182,35 @@ export default function RealtimeTab() {
 
   return (
     <div className="px-4 py-5 flex flex-col items-center">
-      {/* Card Container */}
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl shadow-black/10 overflow-hidden border border-slate-100">
+      <div className="w-full max-w-md rounded-2xl overflow-hidden border border-white/[0.08] bg-white/[0.03]">
 
         {/* Header */}
-        <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+        <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.06]">
           <div>
-            <h2 className="text-base font-extrabold text-slate-800 tracking-tight">실시간 감정 분석</h2>
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-[10px] text-slate-400 font-medium">Real-time Emotion Recognition</p>
-              {modelInfo && (
-                <span className="text-[8px] bg-emerald-50 text-emerald-600 font-bold px-1.5 py-0.5 rounded-full border border-emerald-100">
-                  {modelInfo.model} · {modelInfo.classes}cls
-                </span>
-              )}
-            </div>
+            <h2 className="text-sm font-bold text-white tracking-tight">실시간 감정 분석</h2>
+            {modelInfo && (
+              <p className="text-[10px] text-white/30 mt-0.5 font-mono">
+                {modelInfo.model} · {modelInfo.classes}cls
+              </p>
+            )}
           </div>
           <AnimatePresence>
             {cameraOn && topEmotionDef && topEmotion.value > 0.05 && (
               <motion.div
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                className="flex items-center gap-1.5 bg-slate-50 rounded-full px-3 py-1.5 border border-slate-100"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-sm font-bold text-white"
               >
-                <span className="text-lg">{topEmotionDef.emoji}</span>
-                <span className="text-xs font-bold" style={{ color: topEmotionDef.color }}>
-                  {topEmotionDef.label}
-                </span>
+                {topEmotionDef.label}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
         {/* Webcam Area */}
-        <div className="px-4 pb-3">
-          <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-slate-900">
-            {/* video는 항상 DOM에 존재 — cameraOn에 따라 보이기/숨기기 */}
+        <div className="px-4 pt-4 pb-3">
+          <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-black">
             <video
               ref={videoRef}
               autoPlay
@@ -242,27 +223,27 @@ export default function RealtimeTab() {
 
             {cameraOn ? (
               <>
-                {/* Live indicator */}
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/40 backdrop-blur-sm rounded-full px-2.5 py-1 z-10">
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-2.5 py-1 z-10">
                   <motion.div
-                    className="w-2 h-2 rounded-full bg-red-500"
+                    className="w-1.5 h-1.5 rounded-full bg-white"
                     animate={{ opacity: [1, 0.3, 1] }}
                     transition={{ duration: 1.2, repeat: Infinity }}
                   />
                   <span className="text-white text-[10px] font-bold tracking-wider">LIVE</span>
                 </div>
-                {/* Inference time */}
                 {inferMs && (
-                  <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-sm rounded-full px-2.5 py-1 z-10">
-                    <span className="text-white/80 text-[10px] font-mono">{inferMs}ms</span>
+                  <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-full px-2.5 py-1 z-10">
+                    <span className="text-white/60 text-[10px] font-mono">{inferMs}ms</span>
                   </div>
                 )}
               </>
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
-                <div className="text-5xl mb-3 opacity-30">📷</div>
-                <p className="text-slate-400 text-sm font-medium">카메라가 꺼져 있습니다</p>
-                <p className="text-slate-300 text-[10px] mt-1">아래 버튼을 눌러 시작하세요</p>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <svg className="w-10 h-10 text-white/10 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+                <p className="text-white/20 text-xs">카메라 꺼짐</p>
               </div>
             )}
           </div>
@@ -270,28 +251,23 @@ export default function RealtimeTab() {
 
         {/* Error */}
         {error && (
-          <div className="mx-5 mb-3 rounded-xl bg-red-50 border border-red-100 p-3">
-            <p className="text-red-500 text-xs font-medium">{error}</p>
+          <div className="mx-5 mb-3 rounded-xl bg-white/[0.04] border border-white/10 p-3">
+            <p className="text-white/60 text-xs">{error}</p>
           </div>
         )}
 
         {/* Emotion Bars */}
-        <div className="px-5 pb-3">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Emotion Analysis</h3>
+        <div className="px-5 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Emotion</span>
             {cameraOn && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-1"
-              >
-                <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[9px] text-emerald-500 font-semibold">AI 분석중</span>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1">
+                <div className="w-1 h-1 rounded-full bg-white/40 animate-pulse" />
+                <span className="text-[9px] text-white/30">분석중</span>
               </motion.div>
             )}
           </div>
-
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {EMOTIONS.map(emotion => (
               <EmotionBar
                 key={emotion.key}
@@ -305,66 +281,40 @@ export default function RealtimeTab() {
 
         {/* Model Selector */}
         {availableModels.length > 0 && (
-          <div className="px-5 pb-2">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">AI Model</label>
-            <div className="relative">
-              <select
-                value={selectedModel}
-                onChange={(e) => {
-                  setSelectedModel(e.target.value)
-                  setModelInfo(null) // 모델 변경 시 배지 초기화
-                }}
-                className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300 transition-all cursor-pointer"
-              >
-                {availableModels.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd"/>
-                </svg>
-              </div>
-            </div>
+          <div className="px-5 pb-4">
+            <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest block mb-2">Model</label>
+            <select
+              value={selectedModel}
+              onChange={(e) => { setSelectedModel(e.target.value); setModelInfo(null) }}
+              className="w-full appearance-none bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm font-medium text-white focus:outline-none focus:border-white/20 transition-all cursor-pointer"
+            >
+              {availableModels.map(m => (
+                <option key={m.id} value={m.id} disabled={!m.loaded}>
+                  {m.label}{!m.loaded ? ' (미로드)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
         {/* Camera Toggle */}
-        <div className="px-5 pb-5 pt-2">
+        <div className="px-5 pb-5">
           <button
             onClick={cameraOn ? stopCamera : startCamera}
-            className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 ${
+            className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 active:scale-[0.98] ${
               cameraOn
-                ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 active:scale-[0.98]'
-                : 'bg-gradient-to-r from-blue-500 to-violet-500 text-white shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 active:scale-[0.98]'
+                ? 'bg-white/[0.06] text-white/60 hover:bg-white/[0.09] border border-white/10'
+                : 'bg-white text-black hover:bg-white/90'
             }`}
           >
-            {cameraOn ? (
-              <>
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><polygon points="23 7 16 12 23 17 23 7"/>
-                  <line x1="1" y1="1" x2="23" y2="23" strokeWidth="2.5"/>
-                </svg>
-                카메라 끄기
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><polygon points="23 7 16 12 23 17 23 7"/>
-                </svg>
-                카메라 켜기
-              </>
-            )}
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            {cameraOn ? '카메라 끄기' : '카메라 켜기'}
           </button>
         </div>
       </div>
-
-      {/* Footer */}
-      <p className="text-[9px] text-muted-foreground/30 mt-4 font-medium tracking-widest">
-        EmotionAI · ResNet-18 · 7-class model
-      </p>
     </div>
   )
 }

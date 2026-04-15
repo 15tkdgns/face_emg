@@ -45,7 +45,7 @@ MODEL_REGISTRY = {
     'resnet18': {
         'label':       'ResNet-18 (강민구)',
         'description': '7개 감정 분류 · 실시간 추론 모델',
-        'ckpt':        'resnet18_emotion_best.pth',
+        'ckpt':        'kang_mingoo/resnet18_emotion_best.pth',
         'color':       '#22C55E',
         'val_acc':     0.82,
         'f1_per':      {e: 0.80 for e in EMOTIONS_7},
@@ -74,38 +74,6 @@ MODEL_REGISTRY = {
         'num_classes': 7,
         'emotions':    EMOTIONS_7,
         'backbone':    'efficientnet_v2_s',
-    },
-    'densenet121': {
-        'label':       'DenseNet121',
-        'description': '기본 전처리 · Best 모델',
-        'ckpt':        'output/densenet121/best_model.pth',
-        'color':       '#4F86C6',
-        'val_acc':     0.8762,
-        'f1_per':      {'기쁨': 0.968, '당황': 0.902, '분노': 0.860, '상처': 0.828},
-    },
-    'densenet121_clahe_edge': {
-        'label':       'DenseNet121 + CLAHE + Edge',
-        'description': 'CLAHE 평활화 + Canny 엣지 채널',
-        'ckpt':        'output/densenet121_clahe_edge/best_model.pth',
-        'color':       '#57B894',
-        'val_acc':     0.8476,
-        'f1_per':      {'기쁨': 0.959, '당황': 0.881, '분노': 0.813, '상처': 0.807},
-    },
-    'efficientnet_b0': {
-        'label':       'EfficientNet-B0',
-        'description': '기본 전처리',
-        'ckpt':        'output/efficientnet_b0/best_model.pth',
-        'color':       '#F4845F',
-        'val_acc':     0.8262,
-        'f1_per':      {'기쁨': 0.968, '당황': 0.846, '분노': 0.810, '상처': 0.760},
-    },
-    'efficientnet_b0_clahe_edge': {
-        'label':       'EfficientNet-B0 + CLAHE + Edge',
-        'description': 'CLAHE 평활화 + Canny 엣지 채널',
-        'ckpt':        'output/efficientnet_b0_clahe_edge/best_model.pth',
-        'color':       '#9b59b6',
-        'val_acc':     0.8167,
-        'f1_per':      {'기쁨': 0.968, '당황': 0.864, '분노': 0.798, '상처': 0.729},
     },
 }
 

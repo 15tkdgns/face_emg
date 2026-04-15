@@ -5,29 +5,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
-const EMOTION_EMOJI = { 기쁨: '😄', 당황: '😳', 분노: '😡', 상처: '😢', 불안: '😨', 슬픔: '😿', 중립: '😐' }
-const EMOTION_COLOR = { 기쁨: '#FBBF24', 당황: '#FB923C', 분노: '#F87171', 상처: '#A78BFA', 불안: '#34D399', 슬픔: '#818CF8', 중립: '#94A3B8' }
-
 function ConfidenceBar({ emotion, score, highlight }) {
-  const color = EMOTION_COLOR[emotion] || '#A78BFA'
   return (
-    <div className="flex items-center gap-3 mb-2.5 group">
-      <span className="w-14 text-xs font-medium shrink-0 flex items-center gap-1.5 text-muted-foreground group-hover:text-foreground transition-colors">
-        <span className="text-sm">{EMOTION_EMOJI[emotion]}</span>
-        <span>{emotion}</span>
-      </span>
-      <div className="flex-1 h-2.5 rounded-full bg-white/[0.04] overflow-hidden relative">
-        <div 
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{ 
-            width: `${(score * 100).toFixed(1)}%`, 
-            background: `linear-gradient(90deg, ${color}90, ${color})`,
-            boxShadow: highlight ? `0 0 12px ${color}50` : 'none',
-            opacity: highlight ? 1 : 0.35
-          }}
+    <div className="flex items-center gap-3 mb-2">
+      <span className="w-8 text-xs font-medium shrink-0 text-white/50">{emotion}</span>
+      <div className="flex-1 h-2 rounded-full bg-white/[0.06] overflow-hidden">
+        <div
+          className="h-full rounded-full bg-white transition-all duration-700 ease-out"
+          style={{ width: `${(score * 100).toFixed(1)}%`, opacity: highlight ? 1 : 0.25 }}
         />
       </div>
-      <span className="w-12 text-[11px] text-right text-muted-foreground shrink-0 font-mono tabular-nums">
+      <span className="w-12 text-[11px] text-right text-white/30 shrink-0 font-mono tabular-nums">
         {(score * 100).toFixed(1)}%
       </span>
     </div>
@@ -35,31 +23,21 @@ function ConfidenceBar({ emotion, score, highlight }) {
 }
 
 function SingleResult({ result }) {
-  const { emotion, emoji, confidence, scores, infer_ms } = result
-  const color = EMOTION_COLOR[emotion] || '#A78BFA'
-  
+  const { emotion, confidence, scores, infer_ms } = result
+
   return (
-    <Card className={`glass glow-neon animate-slide-up overflow-hidden`}>
+    <Card className="glass animate-slide-up overflow-hidden">
       <CardContent className="p-0">
-        {/* Hero result */}
-        <div className="relative text-center py-8 px-6 overflow-hidden">
-          {/* Background glow */}
-          <div className="absolute inset-0 opacity-20" style={{ background: `radial-gradient(circle at 50% 30%, ${color}40, transparent 70%)` }} />
-          
-          <div className="relative z-10">
-            <div className="text-7xl mb-3 drop-shadow-2xl" style={{ filter: `drop-shadow(0 0 20px ${color}40)` }}>{emoji}</div>
-            <div className="text-3xl font-black tracking-tight" style={{ color }}>{emotion}</div>
-            <div className="mt-3 inline-flex items-center gap-2 bg-white/[0.06] rounded-full px-4 py-1.5 text-xs text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: color }} />
-              신뢰도 <span className="font-bold text-foreground">{(confidence * 100).toFixed(1)}%</span>
-              {infer_ms && <span className="ml-1 opacity-50">• {infer_ms}ms</span>}
-            </div>
+        <div className="text-center py-8 px-6">
+          <div className="text-4xl font-black text-white tracking-tight mb-2">{emotion}</div>
+          <div className="inline-flex items-center gap-2 bg-white/[0.06] rounded-full px-4 py-1.5 text-xs text-white/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-pulse" />
+            신뢰도 <span className="font-bold text-white">{(confidence * 100).toFixed(1)}%</span>
+            {infer_ms && <span className="ml-1">· {infer_ms}ms</span>}
           </div>
         </div>
-        
-        {/* Scores */}
         <div className="px-5 pb-5 pt-2 border-t border-white/[0.04]">
-          <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold mb-3">Emotion Scores</h4>
+          <h4 className="text-[10px] uppercase tracking-widest text-white/20 font-semibold mb-3">Scores</h4>
           {Object.keys(scores).map(e => (
             <ConfidenceBar key={e} emotion={e} score={scores[e] ?? 0} highlight={e === emotion} />
           ))}
@@ -73,34 +51,24 @@ function CompareResult({ results }) {
   return (
     <div className="space-y-3 animate-slide-up">
       <div className="flex items-center justify-between px-1 mb-1">
-        <h3 className="text-sm font-bold text-foreground">앙상블 비교 결과</h3>
-        <Badge className="bg-[#7C65F6]/15 text-[#A78BFA] border-[#7C65F6]/20 text-[10px]">{results.length} Models</Badge>
+        <h3 className="text-sm font-bold text-white">비교 결과</h3>
+        <Badge className="bg-white/10 text-white/50 border-white/10 text-[10px]">{results.length} Models</Badge>
       </div>
-      
       {results.map((r, idx) => (
         <Card key={r.model_id} className="glass overflow-hidden animate-slide-up" style={{ animationDelay: `${idx * 80}ms` }}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2 h-8 rounded-full" style={{ background: `linear-gradient(180deg, ${r.color}, ${r.color}60)` }} />
-                <div>
-                  <span className="font-semibold text-sm text-foreground">{r.model_label}</span>
-                  <div className="text-[10px] text-muted-foreground font-mono">{r.infer_ms}ms inference</div>
-                </div>
+              <div>
+                <span className="font-semibold text-sm text-white">{r.model_label}</span>
+                <div className="text-[10px] text-white/30 font-mono">{r.infer_ms}ms</div>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-black" style={{ color: EMOTION_COLOR[r.emotion] }}>
-                  {r.emoji}
-                </div>
-              </div>
+              <span className="text-base font-black text-white">{r.emotion}</span>
             </div>
-            
-            <div className="flex items-center gap-2 mb-3 rounded-xl bg-white/[0.03] p-2.5">
-              <span className="text-lg font-extrabold" style={{ color: EMOTION_COLOR[r.emotion] }}>{r.emotion}</span>
+            <div className="flex items-center gap-2 mb-3 rounded-xl bg-white/[0.03] px-3 py-2">
+              <span className="text-sm font-bold text-white/60">{r.emotion}</span>
               <div className="flex-1" />
-              <span className="text-base font-bold text-foreground/80 font-mono">{(r.confidence * 100).toFixed(1)}%</span>
+              <span className="text-sm font-bold text-white font-mono">{(r.confidence * 100).toFixed(1)}%</span>
             </div>
-            
             {Object.keys(r.scores).map(e => (
               <ConfidenceBar key={e} emotion={e} score={r.scores[e] ?? 0} highlight={e === r.emotion} />
             ))}
@@ -130,9 +98,10 @@ export default function AnalyzeTab() {
 
   useEffect(() => {
     api.models().then(res => {
-      const loaded = (res.data.models || []).filter(m => m.loaded)
-      setAvailableModels(loaded)
-      if (loaded.length > 0 && !loaded.find(m => m.id === selectedModel)) {
+      const all = res.data.models || []
+      setAvailableModels(all)
+      const loaded = all.filter(m => m.loaded)
+      if (loaded.length > 0 && !all.find(m => m.id === selectedModel && m.loaded)) {
         setModel(loaded[0].id)
       }
     }).catch(() => {})
@@ -243,8 +212,8 @@ export default function AnalyzeTab() {
           <button
             key={m.key}
             className={`flex-1 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 ${
-              mode === m.key 
-                ? 'bg-[#7C65F6]/20 text-[#A78BFA] shadow-inner' 
+              mode === m.key
+                ? 'bg-white/10 text-white shadow-inner'
                 : 'text-muted-foreground/50 hover:text-muted-foreground'
             }`}
             onClick={() => switchMode(m.key)}
@@ -288,12 +257,12 @@ export default function AnalyzeTab() {
       {mode === 'camera' && (
         <div className="flex gap-2">
           {!camActive ? (
-            <Button className="w-full bg-[#7C65F6] hover:bg-[#6C55E6] text-white font-bold h-12 rounded-xl shadow-lg shadow-[#7C65F6]/25" onClick={startCamera}>
+            <Button className="w-full bg-white text-black hover:bg-white/90 font-bold h-12 rounded-xl" onClick={startCamera}>
               카메라 켜기
             </Button>
           ) : (
             <>
-              <Button className="flex-[2] bg-[#7C65F6] hover:bg-[#6C55E6] text-white font-bold h-12 rounded-xl shadow-lg shadow-[#7C65F6]/25" onClick={captureCamera}>
+              <Button className="flex-[2] bg-white text-black hover:bg-white/90 font-bold h-12 rounded-xl" onClick={captureCamera}>
                 📸 촬영
               </Button>
               <Button variant="outline" className="flex-1 glass border-white/10 text-muted-foreground h-12 rounded-xl" onClick={stopCamera}>
@@ -308,7 +277,7 @@ export default function AnalyzeTab() {
       {mode === 'upload' && (
         <div>
           <input id="imgUpload" type="file" accept="image/*" className="hidden" onChange={onFileChange} />
-          <Button asChild className={`w-full h-12 rounded-xl font-semibold ${preview ? 'glass border-white/10 text-muted-foreground hover:text-foreground' : 'bg-white/[0.06] border border-dashed border-white/10 text-muted-foreground hover:border-[#7C65F6]/40 hover:text-[#A78BFA]'}`}>
+          <Button asChild className={`w-full h-12 rounded-xl font-semibold ${preview ? 'glass border-white/10 text-muted-foreground hover:text-foreground' : 'bg-white/[0.06] border border-dashed border-white/10 text-muted-foreground hover:border-white/30 hover:text-white'}`}>
             <label htmlFor="imgUpload" className="cursor-pointer">
               {preview ? '🔄 다른 이미지 선택' : '📂 이미지 선택하기'}
             </label>
@@ -320,11 +289,11 @@ export default function AnalyzeTab() {
       <div className="space-y-3">
         <div className="glass rounded-2xl p-1 flex gap-1">
           <button
-            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${!compareMode ? 'bg-[#7C65F6]/20 text-[#A78BFA]' : 'text-muted-foreground/50'}`}
+            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${!compareMode ? 'bg-white/10 text-white' : 'text-muted-foreground/50'}`}
             onClick={() => setCompare(false)}
           >단일 모델</button>
           <button
-            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${compareMode ? 'bg-[#7C65F6]/20 text-[#A78BFA]' : 'text-muted-foreground/50'}`}
+            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${compareMode ? 'bg-white/10 text-white' : 'text-muted-foreground/50'}`}
             onClick={() => setCompare(true)}
           >M-Ensemble 비교</button>
         </div>
@@ -333,16 +302,18 @@ export default function AnalyzeTab() {
           <select
             value={selectedModel}
             onChange={e => setModel(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl glass border-white/[0.08] text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-[#7C65F6]/50 appearance-none cursor-pointer"
+            className="w-full px-4 py-3 rounded-xl glass border-white/[0.08] text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-white/20 appearance-none cursor-pointer"
           >
             {availableModels.map(m => (
-              <option key={m.id} value={m.id}>{m.label}</option>
+              <option key={m.id} value={m.id} disabled={!m.loaded}>
+                {m.label}{!m.loaded ? ' (미로드)' : ''}
+              </option>
             ))}
           </select>
         )}
 
         <Button
-          className="w-full h-14 rounded-2xl font-bold text-base bg-gradient-to-r from-[#7C65F6] to-[#A78BFA] hover:from-[#6C55E6] hover:to-[#9B7BFA] text-white shadow-xl shadow-[#7C65F6]/30 transition-all duration-300 disabled:opacity-30 disabled:shadow-none"
+          className="w-full h-14 rounded-2xl font-bold text-base bg-white text-black hover:bg-white/90 transition-all duration-300 disabled:opacity-30 disabled:shadow-none"
           disabled={!file || loading}
           onClick={analyze}
         >
