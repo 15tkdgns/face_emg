@@ -1,24 +1,12 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { api } from '../api'
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 
-const EMOTIONS_4 = ['기쁨', '당황', '분노', '상처']
-const EMOTIONS_7 = ['기쁨', '당황', '분노', '불안', '상처', '슬픔', '중립']
 const EMOTION_EMOJI = { 기쁨: '😄', 당황: '😳', 분노: '😡', 상처: '😢', 불안: '😨', 슬픔: '😿', 중립: '😐' }
 const EMOTION_COLOR = { 기쁨: '#FBBF24', 당황: '#FB923C', 분노: '#F87171', 상처: '#A78BFA', 불안: '#34D399', 슬픔: '#818CF8', 중립: '#94A3B8' }
-const EMOTION_GLOW  = { 기쁨: 'shadow-amber-500/20', 당황: 'shadow-orange-500/20', 분노: 'shadow-red-500/20', 상처: 'shadow-violet-500/20', 불안: 'shadow-emerald-500/20', 슬픔: 'shadow-indigo-500/20', 중립: 'shadow-slate-500/20' }
-
-const MODELS = [
-  { id: 'resnet18',                  label: 'ResNet-18 (7cls)',        color: '#22C55E', classes: 7 },
-  { id: 'densenet121',               label: 'DenseNet-121',            color: '#60A5FA', classes: 4 },
-  { id: 'densenet121_clahe_edge',    label: 'DenseNet-121 + CE',       color: '#34D399', classes: 4 },
-  { id: 'efficientnet_b0',           label: 'EfficientNet-B0',         color: '#FB923C', classes: 4 },
-  { id: 'efficientnet_b0_clahe_edge',label: 'EfficientNet-B0 + CE',    color: '#C084FC', classes: 4 },
-]
 
 function ConfidenceBar({ emotion, score, highlight }) {
   const color = EMOTION_COLOR[emotion] || '#A78BFA'
@@ -49,7 +37,6 @@ function ConfidenceBar({ emotion, score, highlight }) {
 function SingleResult({ result }) {
   const { emotion, emoji, confidence, scores, infer_ms } = result
   const color = EMOTION_COLOR[emotion] || '#A78BFA'
-  const glow = EMOTION_GLOW[emotion] || ''
   
   return (
     <Card className={`glass glow-neon animate-slide-up overflow-hidden`}>
@@ -114,7 +101,7 @@ function CompareResult({ results }) {
               <span className="text-base font-bold text-foreground/80 font-mono">{(r.confidence * 100).toFixed(1)}%</span>
             </div>
             
-            {EMOTIONS.map(e => (
+            {Object.keys(r.scores).map(e => (
               <ConfidenceBar key={e} emotion={e} score={r.scores[e] ?? 0} highlight={e === r.emotion} />
             ))}
           </CardContent>
@@ -128,6 +115,7 @@ export default function AnalyzeTab() {
   const [mode, setMode]           = useState('upload')
   const [compareMode, setCompare] = useState(false)
   const [selectedModel, setModel] = useState('resnet18')
+  const [availableModels, setAvailableModels] = useState([])
   const [preview, setPreview]     = useState(null)
   const [file, setFile]           = useState(null)
   const [loading, setLoading]     = useState(false)
@@ -139,6 +127,16 @@ export default function AnalyzeTab() {
   const videoRef    = useRef(null)
   const streamRef   = useRef(null)
   const [camActive, setCamActive] = useState(false)
+
+  useEffect(() => {
+    api.models().then(res => {
+      const loaded = (res.data.models || []).filter(m => m.loaded)
+      setAvailableModels(loaded)
+      if (loaded.length > 0 && !loaded.find(m => m.id === selectedModel)) {
+        setModel(loaded[0].id)
+      }
+    }).catch(() => {})
+  }, [])
 
   const onFileChange = (e) => {
     const f = e.target.files[0]
@@ -337,7 +335,7 @@ export default function AnalyzeTab() {
             onChange={e => setModel(e.target.value)}
             className="w-full px-4 py-3 rounded-xl glass border-white/[0.08] text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-[#7C65F6]/50 appearance-none cursor-pointer"
           >
-            {MODELS.map(m => (
+            {availableModels.map(m => (
               <option key={m.id} value={m.id}>{m.label}</option>
             ))}
           </select>

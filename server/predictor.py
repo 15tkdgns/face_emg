@@ -43,7 +43,7 @@ EMOTION_EMOJI = {
 
 MODEL_REGISTRY = {
     'resnet18': {
-        'label':       'ResNet-18 (7-class)',
+        'label':       'ResNet-18 (강민구)',
         'description': '7개 감정 분류 · 실시간 추론 모델',
         'ckpt':        'resnet18_emotion_best.pth',
         'color':       '#22C55E',
@@ -52,6 +52,28 @@ MODEL_REGISTRY = {
         'num_classes': 7,
         'emotions':    EMOTIONS_7,
         'backbone':    'resnet18',
+    },
+    'mobilenet_v2': {
+        'label':       'MobileNet-V2 (한유승)',
+        'description': '7개 감정 분류 · 경량 모바일 모델',
+        'ckpt':        '한유승/best_emotion_model.pth',
+        'color':       '#F59E0B',
+        'val_acc':     0.0,
+        'f1_per':      {e: 0.0 for e in EMOTIONS_7},
+        'num_classes': 7,
+        'emotions':    EMOTIONS_7,
+        'backbone':    'mobilenet_v2',
+    },
+    'efficientnet_v2_s': {
+        'label':       'EfficientNetV2-S (신희원)',
+        'description': '7개 감정 분류 · Acc 91.4%',
+        'ckpt':        '신희원/best_efficientnet_v2_s_clean.pth',
+        'color':       '#EC4899',
+        'val_acc':     0.914,
+        'f1_per':      {e: 0.91 for e in EMOTIONS_7},
+        'num_classes': 7,
+        'emotions':    EMOTIONS_7,
+        'backbone':    'efficientnet_v2_s',
     },
     'densenet121': {
         'label':       'DenseNet121',
