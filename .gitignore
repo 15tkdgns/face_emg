@@ -26,6 +26,8 @@ onnx_models/
 # 멤버 폴더 모델 파일 예외
 !han_yooseung/*.pth
 !han_yooseung/*.onnx
+!kang_mingoo/*.pth
+!kang_mingoo/*.onnx
 
 # 학습 출력물
 output/
