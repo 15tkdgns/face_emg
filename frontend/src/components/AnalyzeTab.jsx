@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -80,7 +80,6 @@ function CompareResult({ results }) {
 }
 
 export default function AnalyzeTab() {
-  const [mode, setMode]           = useState('upload')
   const [compareMode, setCompare] = useState(false)
   const [selectedModel, setModel] = useState('resnet18')
   const [availableModels, setAvailableModels] = useState([])
@@ -91,10 +90,12 @@ export default function AnalyzeTab() {
   const [error, setError]         = useState(null)
   const [faceB64, setFaceB64]     = useState(null)
   const [faceDetected, setFaceDetected] = useState(null)
+  const [bbox, setBbox]           = useState(null)
+  const [landmarks, setLandmarks] = useState([])
+  const [imgSize, setImgSize]     = useState(null)
 
-  const videoRef    = useRef(null)
-  const streamRef   = useRef(null)
-  const [camActive, setCamActive] = useState(false)
+  const imgRef = useRef(null)
+  const canvasRef = useRef(null)
 
   useEffect(() => {
     api.models().then(res => {
@@ -115,56 +116,9 @@ export default function AnalyzeTab() {
     setResult(null)
     setError(null)
     setFaceB64(null)
-  }
-
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        videoRef.current.play()
-      }
-      setCamActive(true)
-      setResult(null)
-      setError(null)
-    } catch (e) {
-      setError('카메라 접근 권한이 필요합니다.')
-    }
-  }, [])
-
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
-    setCamActive(false)
-  }, [])
-
-  const captureCamera = useCallback(() => {
-    const video = videoRef.current
-    if (!video) return
-    const canvas = document.createElement('canvas')
-    canvas.width  = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d').drawImage(video, 0, 0)
-    canvas.toBlob(blob => {
-      setFile(blob)
-      setPreview(canvas.toDataURL('image/jpeg'))
-      setResult(null)
-      setFaceB64(null)
-      stopCamera()
-    }, 'image/jpeg', 0.92)
-  }, [stopCamera])
-
-  const switchMode = (m) => {
-    setMode(m)
-    setResult(null)
-    setError(null)
-    setPreview(null)
-    setFile(null)
-    setFaceB64(null)
-    if (m !== 'camera' && camActive) stopCamera()
+    setBbox(null)
+    setLandmarks([])
+    setImgSize(null)
   }
 
   const analyze = async () => {
@@ -180,11 +134,15 @@ export default function AnalyzeTab() {
         setResult({ type: 'compare', data: res.data.results })
         setFaceB64(res.data.face_b64)
         setFaceDetected(res.data.face_detected)
+        setBbox(res.data.bbox)
+        if (res.data.landmarks) setLandmarks(res.data.landmarks)
       } else {
         res = await api.analyze(file, selectedModel)
         setResult({ type: 'single', data: res.data })
         setFaceB64(res.data.face_b64)
         setFaceDetected(res.data.face_detected)
+        setBbox(res.data.bbox)
+        if (res.data.landmarks) setLandmarks(res.data.landmarks)
       }
     } catch (e) {
       if (e?.code === 'ERR_NETWORK' || e?.message === 'Network Error') {
@@ -201,44 +159,102 @@ export default function AnalyzeTab() {
     }
   }
 
+  // Draw overlay when results or image size are available
+  useEffect(() => {
+    if (!canvasRef.current || !imgSize) return
+    const canvas = canvasRef.current
+    const cw = canvas.offsetWidth
+    const ch = canvas.offsetHeight
+    if (!cw || !ch) return
+    canvas.width = cw
+    canvas.height = ch
+
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, cw, ch)
+
+    if (!result) return // Only draw over the image if we have a result
+
+    const { w: imgW, h: imgH } = imgSize
+    const scale = Math.max(cw / imgW, ch / imgH)
+    const renderW = imgW * scale
+    const renderH = imgH * scale
+    const offsetX = (cw - renderW) / 2
+    const offsetY = (ch - renderH) / 2
+
+    // Unmirrored coordinate map for uploaded local image
+    const mapPoint = (nx, ny) => {
+      const rawX = offsetX + nx * renderW
+      const rawY = offsetY + ny * renderH
+      return [rawX, rawY]
+    }
+
+    if (bbox) {
+      const [bx, by, bw, bh] = bbox
+      const nx = bx / imgW
+      const ny = by / imgH
+      const nw = bw / imgW
+      const nh = bh / imgH
+
+      const [dx, dy] = mapPoint(nx, ny)
+      const dw = nw * renderW
+      const dh = nh * renderH
+
+      ctx.strokeStyle = '#4A9EFF'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([6, 4])
+      ctx.strokeRect(dx, dy, dw, dh)
+      ctx.setLineDash([])
+
+      const cl = 14
+      ctx.lineWidth = 2.5
+      ctx.strokeStyle = '#4A9EFF'
+      ;[
+        [dx, dy, 1, 1],
+        [dx + dw, dy, -1, 1],
+        [dx, dy + dh, 1, -1],
+        [dx + dw, dy + dh, -1, -1],
+      ].forEach(([cx2, cy2, sx2, sy2]) => {
+        ctx.beginPath()
+        ctx.moveTo(cx2 + sx2 * cl, cy2)
+        ctx.lineTo(cx2, cy2)
+        ctx.lineTo(cx2, cy2 + sy2 * cl)
+        ctx.stroke()
+      })
+    }
+
+    if (landmarks.length > 0) {
+      landmarks.forEach(([nx, ny]) => {
+        const [px, py] = mapPoint(nx, ny)
+        ctx.beginPath()
+        ctx.arc(px, py, 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = '#4ADE80'
+        ctx.shadowColor = '#4ADE80'
+        ctx.shadowBlur = 5
+        ctx.fill()
+      })
+      ctx.shadowBlur = 0
+    }
+  }, [bbox, landmarks, imgSize, result])
+
   return (
     <div className="px-5 py-4 space-y-5">
-      {/* Mode Switcher */}
-      <div className="glass rounded-2xl p-1 flex gap-1">
-        {[
-          { key: 'upload', label: '📁 이미지 업로드' },
-          { key: 'camera', label: '📷 실시간 웹캠' },
-        ].map(m => (
-          <button
-            key={m.key}
-            className={`flex-1 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 ${
-              mode === m.key
-                ? 'bg-white/10 text-white shadow-inner'
-                : 'text-muted-foreground/50 hover:text-muted-foreground'
-            }`}
-            onClick={() => switchMode(m.key)}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
       {/* Media Viewer */}
       <Card className="glass overflow-hidden border-0 glow-neon">
         <div className="aspect-[4/3] flex items-center justify-center relative">
-          {mode === 'camera' ? (
-            camActive ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover -scale-x-100" />
-            ) : preview ? (
-              <img src={preview} alt="캡처" className="w-full h-full object-cover" />
-            ) : (
-              <div className="flex flex-col items-center gap-3 text-muted-foreground/30">
-                <div className="text-6xl">📷</div>
-                <span className="text-xs font-medium tracking-wide">CAMERA READY</span>
-              </div>
-            )
-          ) : preview ? (
-            <img src={preview} alt="업로드" className="w-full h-full object-cover" />
+          {preview ? (
+            <>
+              <img 
+                ref={imgRef}
+                src={preview} 
+                alt="업로드" 
+                className="w-full h-full object-cover" 
+                onLoad={(e) => setImgSize({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+              />
+              <canvas
+                ref={canvasRef}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+              />
+            </>
           ) : (
             <div className="flex flex-col items-center gap-3 text-muted-foreground/30">
               <div className="text-6xl">🖼️</div>
@@ -247,43 +263,21 @@ export default function AnalyzeTab() {
           )}
           
           {/* Overlay gradient */}
-          {(preview || camActive) && (
+          {preview && (
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a1a]/60 via-transparent to-transparent pointer-events-none" />
           )}
         </div>
       </Card>
 
-      {/* Camera Controls */}
-      {mode === 'camera' && (
-        <div className="flex gap-2">
-          {!camActive ? (
-            <Button className="w-full bg-white text-black hover:bg-white/90 font-bold h-12 rounded-xl" onClick={startCamera}>
-              카메라 켜기
-            </Button>
-          ) : (
-            <>
-              <Button className="flex-[2] bg-white text-black hover:bg-white/90 font-bold h-12 rounded-xl" onClick={captureCamera}>
-                📸 촬영
-              </Button>
-              <Button variant="outline" className="flex-1 glass border-white/10 text-muted-foreground h-12 rounded-xl" onClick={stopCamera}>
-                취소
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-
       {/* File Upload */}
-      {mode === 'upload' && (
-        <div>
-          <input id="imgUpload" type="file" accept="image/*" className="hidden" onChange={onFileChange} />
-          <Button asChild className={`w-full h-12 rounded-xl font-semibold ${preview ? 'glass border-white/10 text-muted-foreground hover:text-foreground' : 'bg-white/[0.06] border border-dashed border-white/10 text-muted-foreground hover:border-white/30 hover:text-white'}`}>
-            <label htmlFor="imgUpload" className="cursor-pointer">
-              {preview ? '🔄 다른 이미지 선택' : '📂 이미지 선택하기'}
-            </label>
-          </Button>
-        </div>
-      )}
+      <div>
+        <input id="imgUpload" type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+        <Button asChild className={`w-full h-12 rounded-xl font-semibold ${preview ? 'glass border-white/10 text-muted-foreground hover:text-foreground' : 'bg-white/[0.06] border border-dashed border-white/10 text-muted-foreground hover:border-white/30 hover:text-white'}`}>
+          <label htmlFor="imgUpload" className="cursor-pointer">
+            {preview ? '🔄 다른 이미지 선택' : '📂 이미지 선택하기'}
+          </label>
+        </Button>
+      </div>
 
       {/* Analysis Options */}
       <div className="space-y-3">
@@ -324,6 +318,12 @@ export default function AnalyzeTab() {
             </span>
           ) : '🚀 AI 분석 시작'}
         </Button>
+        <p className="flex items-center justify-center gap-1.5 pt-1 pb-1 text-[10px] font-medium text-white/40">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          개인정보보호를 위해 데이터 수집은 하지 않습니다
+        </p>
       </div>
 
       {/* Error */}
@@ -340,12 +340,12 @@ export default function AnalyzeTab() {
             ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
             : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
         }`}>
-          {faceDetected ? '👀 얼굴 영역을 정확히 포착했습니다' : '⚠️ 얼굴 미검출 — 중앙 크롭으로 대체 분석'}
+          {faceDetected ? '👀 얼굴 영역을 정확히 포착했습니다' : '⚠️ 얼굴 미검출 — 얼굴 개체를 찾을 수 없어 분석 결과를 표시하지 않습니다.'}
         </div>
       )}
 
       {/* Face Crop Preview */}
-      {faceB64 && (
+      {faceB64 && faceDetected && (
         <div className="animate-fade-in">
           <p className="text-[10px] font-semibold text-muted-foreground/50 mb-2 uppercase tracking-widest">Detected Region</p>
           <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 shadow-lg group">
@@ -355,7 +355,7 @@ export default function AnalyzeTab() {
       )}
 
       {/* Results */}
-      {result && (
+      {result && faceDetected && (
         <div className="pt-2">
           {result.type === 'single'
             ? <SingleResult result={result.data} />

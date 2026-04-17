@@ -1,6 +1,8 @@
 """
 감정인식 FastAPI 백엔드
 
+# Reload Trigger: Mediapipe update
+
 엔드포인트:
   GET  /api/health              서버·모델 상태
   GET  /api/models              모델 목록 + 성능 지표
@@ -24,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from server.predictor import ModelManager, PIPELINE_IMAGES, BASE_DIR, detect_and_crop
+from server.predictor import ModelManager, PIPELINE_IMAGES, BASE_DIR, detect_and_crop, detect_with_landmarks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -106,7 +108,7 @@ async def analyze(
         logger.info(f'analyze: model={model_id} file={file.filename} size={len(contents)}')
         img_bgr = _decode_image(contents)
         logger.info(f'  decoded: shape={img_bgr.shape}')
-        bbox, face_rgb, face_b64 = detect_and_crop(img_bgr)
+        bbox, landmarks, face_rgb, face_b64 = detect_with_landmarks(img_bgr)
         logger.info(f'  face: bbox={bbox} face_shape={face_rgb.shape}')
 
         result = manager.predict_one(model_id, face_rgb)
@@ -118,6 +120,7 @@ async def analyze(
             'face_b64':      face_b64,
             'face_detected': bbox is not None,
             'bbox':          bbox,
+            'landmarks':     landmarks,
             'model_id':      model_id,
         }
     except HTTPException:
@@ -140,7 +143,7 @@ async def analyze_compare(file: UploadFile = File(...)):
         contents = await file.read()
         logger.info(f'compare: file={file.filename} size={len(contents)}')
         img_bgr = _decode_image(contents)
-        bbox, face_rgb, face_b64 = detect_and_crop(img_bgr)
+        bbox, landmarks, face_rgb, face_b64 = detect_with_landmarks(img_bgr)
 
         results = manager.predict_all(face_rgb)
         if not results:
@@ -151,6 +154,7 @@ async def analyze_compare(file: UploadFile = File(...)):
             'face_b64':      face_b64,
             'face_detected': bbox is not None,
             'bbox':          bbox,
+            'landmarks':     landmarks,
         }
     except HTTPException:
         raise
@@ -178,7 +182,7 @@ async def analyze_base64(payload: dict):
     img_bytes = base64.b64decode(image_b64)
     img_bgr   = _decode_image(img_bytes)
 
-    bbox, face_rgb, face_b64 = detect_and_crop(img_bgr)
+    bbox, landmarks, face_rgb, face_b64 = detect_with_landmarks(img_bgr)
 
     if compare:
         results = manager.predict_all(face_rgb)
@@ -186,6 +190,8 @@ async def analyze_base64(payload: dict):
             'results':       results,
             'face_b64':      face_b64,
             'face_detected': bbox is not None,
+            'bbox':          bbox,
+            'landmarks':     landmarks,
         }
     else:
         if model_id not in manager.predictors:
@@ -199,6 +205,8 @@ async def analyze_base64(payload: dict):
             **result,
             'face_b64':      face_b64,
             'face_detected': bbox is not None,
+            'bbox':          bbox,
+            'landmarks':     landmarks,
             'model_id':      model_id,
         }
 

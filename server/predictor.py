@@ -26,6 +26,30 @@ FACE_CASCADE = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml'
 )
 
+# ── MediaPipe FaceMesh (랜드마크용) ───────────────────────────────────────────
+try:
+    import mediapipe as mp
+    _FACE_MESH = mp.solutions.face_mesh.FaceMesh(
+        static_image_mode=False,
+        max_num_faces=1,
+        refine_landmarks=False,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    _MEDIAPIPE_OK = True
+    logger.info('MediaPipe FaceMesh 초기화 완료')
+except Exception as _mp_err:
+    _MEDIAPIPE_OK = False
+    _FACE_MESH = None
+    logger.warning(f'MediaPipe 초기화 실패 (Haar fallback): {_mp_err}')
+
+# 시각화용 희소 랜드마크 인덱스 (~24개)
+# Face oval — 전체 36개 중 격점 선택
+_LM_OVAL  = [10, 297, 284, 389, 454, 361, 397, 379, 400, 152, 176, 150, 172, 132, 234, 162, 54, 109]
+# 눈 근사 / 코끝 / 입꼬리
+_LM_EXTRA = [33, 263, 1, 61, 291]
+_KEY_LM   = _LM_OVAL + _LM_EXTRA
+
 MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
@@ -58,8 +82,8 @@ MODEL_REGISTRY = {
         'description': '7개 감정 분류 · 경량 모바일 모델',
         'ckpt':        '한유승/best_emotion_model.pth',
         'color':       '#F59E0B',
-        'val_acc':     0.0,
-        'f1_per':      {e: 0.0 for e in EMOTIONS_7},
+        'val_acc':     0.742,
+        'f1_per':      {e: 0.74 for e in EMOTIONS_7},
         'num_classes': 7,
         'emotions':    EMOTIONS_7,
         'backbone':    'mobilenet_v2',
@@ -229,6 +253,59 @@ def detect_and_crop(img_bgr: np.ndarray):
     face_b64 = base64.b64encode(buf).decode('utf-8')
     face_rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
     return bbox, face_rgb, face_b64
+
+
+# ── MediaPipe 기반 얼굴 검출 + 랜드마크 ─────────────────────────────────────
+
+def detect_with_landmarks(img_bgr: np.ndarray):
+    """
+    MediaPipe FaceMesh로 얼굴 검출 + 희소 랜드마크 추출.
+    Returns: (bbox, landmarks_norm, face_rgb, face_b64)
+      bbox:           [x, y, w, h] in pixels | None
+      landmarks_norm: [[x, y], ...] normalized 0-1 | []
+    """
+    h, w = img_bgr.shape[:2]
+
+    if _MEDIAPIPE_OK and _FACE_MESH is not None:
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        res = _FACE_MESH.process(img_rgb)
+
+        if res.multi_face_landmarks:
+            fl = res.multi_face_landmarks[0]
+
+            # Face oval bbox
+            oval_xs = [fl.landmark[i].x for i in _LM_OVAL]
+            oval_ys = [fl.landmark[i].y for i in _LM_OVAL]
+            x1 = max(0.0, min(oval_xs) - 0.02)
+            y1 = max(0.0, min(oval_ys) - 0.03)
+            x2 = min(1.0, max(oval_xs) + 0.02)
+            y2 = min(1.0, max(oval_ys) + 0.02)
+
+            bx  = int(x1 * w);  by  = int(y1 * h)
+            bw_ = int((x2 - x1) * w); bh_ = int((y2 - y1) * h)
+            bbox = [bx, by, bw_, bh_]
+
+            landmarks = [[round(fl.landmark[i].x, 4), round(fl.landmark[i].y, 4)]
+                         for i in _KEY_LM]
+
+            face_bgr = img_bgr[by:by + bh_, bx:bx + bw_]
+            if face_bgr.size == 0:
+                face_bgr = img_bgr
+        else:
+            bbox = None
+            landmarks = []
+            s = min(h, w)
+            cx, cy = (w - s) // 2, (h - s) // 2
+            face_bgr = img_bgr[cy:cy + s, cx:cx + s]
+    else:
+        # MediaPipe 미사용 — Haar fallback
+        bbox, face_rgb, face_b64 = detect_and_crop(img_bgr)
+        return bbox, [], face_rgb, face_b64
+
+    _, buf = cv2.imencode('.jpg', face_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    face_b64 = base64.b64encode(buf).decode('utf-8')
+    face_rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
+    return bbox, landmarks, face_rgb, face_b64
 
 
 # ── 멀티모델 관리자 ───────────────────────────────────────────────────────────
