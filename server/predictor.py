@@ -13,11 +13,27 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from dataset import EMOTIONS as ALL_EMOTIONS, SAMPLE_EMOTIONS, apply_clahe, extract_edge
-from model import EmotionClassifier
-
 logger = logging.getLogger(__name__)
+
+# ── 인라인 상수 및 유틸 (dataset.py의 PyTorch 의존성 제거) ──────────────────
+
+EMOTIONS = ['기쁨', '당황', '분노', '불안', '상처', '슬픔', '중립']
+ALL_EMOTIONS = EMOTIONS
+SAMPLE_EMOTIONS = ['기쁨', '당황', '분노', '상처']
+
+
+def apply_clahe(img_rgb: np.ndarray) -> np.ndarray:
+    """CLAHE를 LAB L채널에 적용해 조도 불균형 보정."""
+    lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+
+def extract_edge(img_rgb: np.ndarray) -> np.ndarray:
+    """Canny 엣지맵 반환 (H, W), uint8 0~255."""
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    return cv2.Canny(gray, 50, 150)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
