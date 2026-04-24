@@ -66,26 +66,15 @@ EMOTION_EMOJI = {
 # ── 모델 레지스트리 ────────────────────────────────────────────────────────────
 
 MODEL_REGISTRY = {
-    'resnet18': {
-        'label':       'ResNet-18 (강민구)',
-        'description': '7개 감정 분류 · 실시간 추론 모델',
-        'ckpt':        'kang_mingoo/resnet18_emotion_best.pth',
-        'color':       '#22C55E',
-        'val_acc':     0.82,
-        'f1_per':      {e: 0.80 for e in EMOTIONS_7},
-        'num_classes': 7,
-        'emotions':    EMOTIONS_7,
-        'backbone':    'resnet18',
-    },
     'mobilenet_v2': {
         'label':       'MobileNet-V2 (한유승)',
-        'description': '7개 감정 분류 · 경량 모바일 모델',
-        'ckpt':        '한유승/best_emotion_model.pth',
+        'description': '4개 감정 분류 · 경량 모바일 모델',
+        'ckpt':        '한유승/han_yooseung.onnx',
         'color':       '#F59E0B',
-        'val_acc':     0.742,
-        'f1_per':      {e: 0.74 for e in EMOTIONS_7},
-        'num_classes': 7,
-        'emotions':    EMOTIONS_7,
+        'val_acc':     0.876,
+        'f1_per':      {e: 0.88 for e in EMOTIONS},
+        'num_classes': 4,
+        'emotions':    EMOTIONS,
         'backbone':    'mobilenet_v2',
     },
     'efficientnet_v2_s': {
@@ -98,6 +87,28 @@ MODEL_REGISTRY = {
         'num_classes': 7,
         'emotions':    EMOTIONS_7,
         'backbone':    'efficientnet_v2_s',
+    },
+    'resnet18': {
+        'label':       'ResNet-18 (강민구)',
+        'description': '7개 감정 분류 · 실시간 추론 모델',
+        'ckpt':        'kang_mingoo/resnet18_emotion_best.pth',
+        'color':       '#22C55E',
+        'val_acc':     0.82,
+        'f1_per':      {e: 0.80 for e in EMOTIONS_7},
+        'num_classes': 7,
+        'emotions':    EMOTIONS_7,
+        'backbone':    'resnet18',
+    },
+    'densenet': {
+        'label':       'DenseNet-121 (박상훈)',
+        'description': '4개 감정 분류 · DenseNet-121',
+        'ckpt':        'park_sanghun/densenet121.onnx',
+        'color':       '#06B6D4',
+        'val_acc':     0.904,
+        'f1_per':      {e: 0.90 for e in EMOTIONS},
+        'num_classes': 4,
+        'emotions':    EMOTIONS,
+        'backbone':    'densenet121',
     },
 }
 
@@ -119,6 +130,7 @@ class EmotionPredictor:
         self.info        = MODEL_REGISTRY[model_id]
         self.device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model       = None
+        self.ort_session = None
         self.use_clahe   = False
         self.use_edge    = False
         self.in_channels = 3
@@ -131,6 +143,12 @@ class EmotionPredictor:
             logger.warning(f'[{self.model_id}] 체크포인트 없음: {ckpt_path}')
             return False
         try:
+            if ckpt_path.endswith('.onnx'):
+                import onnxruntime as ort
+                self.ort_session = ort.InferenceSession(ckpt_path)
+                logger.info(f'[{self.model_id}] ONNX 로드 완료')
+                return True
+
             ckpt = torch.load(ckpt_path, map_location=self.device)
 
             # ── raw state_dict 처리 (메타데이터 없는 .pth) ────────
@@ -199,23 +217,39 @@ class EmotionPredictor:
         else:
             tensor = rgb_tensor
 
-        tensor = tensor.unsqueeze(0).to(self.device)
+        tensor = tensor.unsqueeze(0)
 
         t0 = time.time()
-        with torch.no_grad():
-            logits = self.model(tensor)
+        if self.ort_session is not None:
+            input_name = self.ort_session.get_inputs()[0].name
+            ort_inputs = {input_name: tensor.numpy()}
+            logits_np = self.ort_session.run(None, ort_inputs)[0]
+            logits = torch.from_numpy(logits_np)
             probs  = F.softmax(logits, dim=1)[0].cpu().numpy()
+        else:
+            tensor = tensor.to(self.device)
+            with torch.no_grad():
+                logits = self.model(tensor)
+                probs  = F.softmax(logits, dim=1)[0].cpu().numpy()
         elapsed = (time.time() - t0) * 1000
 
         emo_list = self.emotions
         pred_idx = int(probs.argmax())
+        
+        scores_dict = {e: float(probs[i]) for i, e in enumerate(emo_list)}
+        
+        # 4클래스 모델의 경우 나머지 3개 감정을 0.0으로 패딩하여 7개 감정으로 일치시킴
+        for e in EMOTIONS_7:
+            if e not in scores_dict:
+                scores_dict[e] = 0.0
+
         return {
             'emotion':    emo_list[pred_idx],
             'emoji':      EMOTION_EMOJI.get(emo_list[pred_idx], '🤔'),
             'confidence': float(probs[pred_idx]),
-            'scores':     {e: float(probs[i]) for i, e in enumerate(emo_list)},
+            'scores':     scores_dict,
             'infer_ms':   round(elapsed, 1),
-            'num_classes': len(emo_list),
+            'num_classes': len(EMOTIONS_7),
         }
 
 

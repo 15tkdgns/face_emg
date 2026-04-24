@@ -81,7 +81,7 @@ function CompareResult({ results }) {
 
 export default function AnalyzeTab() {
   const [compareMode, setCompare] = useState(false)
-  const [selectedModel, setModel] = useState('resnet18')
+  const [selectedModel, setModel] = useState('')
   const [availableModels, setAvailableModels] = useState([])
   const [preview, setPreview]     = useState(null)
   const [file, setFile]           = useState(null)
@@ -101,10 +101,6 @@ export default function AnalyzeTab() {
     api.models().then(res => {
       const all = res.data.models || []
       setAvailableModels(all)
-      const loaded = all.filter(m => m.loaded)
-      if (loaded.length > 0 && !all.find(m => m.id === selectedModel && m.loaded)) {
-        setModel(loaded[0].id)
-      }
     }).catch(() => {})
   }, [])
 
@@ -298,6 +294,7 @@ export default function AnalyzeTab() {
             onChange={e => setModel(e.target.value)}
             className="w-full px-4 py-3 rounded-xl glass border-white/[0.08] text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-white/20 appearance-none cursor-pointer"
           >
+            <option value="" disabled hidden>선택해주세요</option>
             {availableModels.map(m => (
               <option key={m.id} value={m.id} disabled={!m.loaded}>
                 {m.label}{!m.loaded ? ' (미로드)' : ''}
@@ -308,7 +305,7 @@ export default function AnalyzeTab() {
 
         <Button
           className="w-full h-14 rounded-2xl font-bold text-base bg-white text-black hover:bg-white/90 transition-all duration-300 disabled:opacity-30 disabled:shadow-none"
-          disabled={!file || loading}
+          disabled={!file || loading || (!compareMode && !selectedModel)}
           onClick={analyze}
         >
           {loading ? (

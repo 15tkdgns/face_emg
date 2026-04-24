@@ -1,0 +1,20 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Frontend code (No need to copy React to FastAPI backend)
+frontend/
+
+# Git
+.git/
+.gitignore
+
+# Mac OS
+.DS_Store

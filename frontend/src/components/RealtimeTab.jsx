@@ -130,7 +130,7 @@ export default function RealtimeTab() {
   const [confidence, setConfidence] = useState(null)
   const [topEmotion, setTopEmotion] = useState(null)
   const [error, setError]           = useState(null)
-  const [selectedModel, setSelectedModel] = useState('resnet18')
+  const [selectedModel, setSelectedModel] = useState('')
   const [availableModels, setAvailableModels] = useState([])
   const [landmarks, setLandmarks]   = useState([])
   const [bbox, setBbox]             = useState(null)
@@ -138,12 +138,15 @@ export default function RealtimeTab() {
   const [showBbox, setShowBbox]     = useState(true)
   const [showLandmarks, setShowLandmarks] = useState(true)
   const [showEmotions, setShowEmotions]   = useState(true)
+  const [compareMode, setCompareMode]     = useState(false)
+  const [compareResults, setCompareResults] = useState([])
 
   const faceIdRef      = useRef(Math.floor(Math.random() * 9000 + 1000).toString())
   const videoRef       = useRef(null)
   const canvasRef      = useRef(null)
   const streamRef      = useRef(null)
-  const selectedModelRef = useRef('resnet18')
+  const selectedModelRef = useRef('')
+  const compareModeRef = useRef(false)
   const intervalRef    = useRef(null)
   const captureCanvas  = useRef(document.createElement('canvas'))
   const faceDetectedRef = useRef(false) // optional optimization, but we use state faceDetected
@@ -200,15 +203,11 @@ export default function RealtimeTab() {
     api.models().then(res => {
       const all = res.data.models || []
       setAvailableModels(all)
-      const loaded = all.filter(m => m.loaded)
-      if (loaded.length > 0 && !all.find(m => m.id === selectedModel && m.loaded)) {
-        setSelectedModel(loaded[0].id)
-        selectedModelRef.current = loaded[0].id
-      }
     }).catch(() => {})
   }, [])
 
   useEffect(() => { selectedModelRef.current = selectedModel }, [selectedModel])
+  useEffect(() => { compareModeRef.current = compareMode }, [compareMode])
 
   // Redraw canvas when overlay data changes
   useEffect(() => {
@@ -227,7 +226,8 @@ export default function RealtimeTab() {
 
   // Capture frame → analyze
   const captureAndAnalyze = useCallback(async () => {
-    if (processingRef.current) return
+    const isCompare = compareModeRef.current
+    if (processingRef.current || (!isCompare && !selectedModelRef.current)) return
     const video = videoRef.current
     if (!video || video.readyState < 2) return
 
@@ -239,22 +239,38 @@ export default function RealtimeTab() {
       c.getContext('2d').drawImage(video, 0, 0)
       const imageB64 = c.toDataURL('image/jpeg', 0.7)
 
-      const res  = await api.analyzeBase64(imageB64, selectedModelRef.current)
+      const res  = await api.analyzeBase64(imageB64, isCompare ? '' : selectedModelRef.current, isCompare)
       const data = res.data
 
-      if (data.scores) {
+      setError(null)
+      if (data.landmarks) setLandmarks(data.landmarks)
+      if (data.bbox)      setBbox(data.bbox)
+      setFaceDetected(!!data.face_detected)
+
+      if (isCompare && data.results) {
+        setCompareResults(data.results)
+        
+        let bestEmotion = null
+        let bestConf = 0
+        data.results.forEach(r => {
+          if (r.confidence > bestConf) {
+            bestConf = r.confidence
+            bestEmotion = r.emotion
+          }
+        })
+        if (bestEmotion) {
+          setTopEmotion(bestEmotion)
+          setConfidence(bestConf)
+        }
+      } else if (!isCompare && data.scores) {
         setScores(data.scores)
         setInferMs(data.infer_ms)
-        setError(null)
 
         const sorted = Object.entries(data.scores).sort((a, b) => b[1] - a[1])
         if (sorted.length > 0) {
           setTopEmotion(sorted[0][0])
           setConfidence(sorted[0][1])
         }
-        if (data.landmarks) setLandmarks(data.landmarks)
-        if (data.bbox)      setBbox(data.bbox)
-        setFaceDetected(!!data.face_detected)
       }
     } catch (e) {
       if (e?.code === 'ERR_NETWORK') setError('백엔드 서버에 연결할 수 없습니다')
@@ -382,7 +398,7 @@ export default function RealtimeTab() {
         }} />
 
         {/* Emotion panel (top-right) */}
-        {cameraOn && showEmotions && (
+        {cameraOn && showEmotions && !compareMode && (
           <div className="absolute top-3 right-3 w-44 rounded-lg overflow-hidden border border-white/10"
             style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}>
             <div className="px-3 pt-2.5 pb-2 space-y-2">
@@ -402,6 +418,28 @@ export default function RealtimeTab() {
                         background: i === 0 ? '#4A9EFF' : 'rgba(255,255,255,0.4)',
                       }}
                     />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Compare Mode panel (top-right) */}
+        {cameraOn && showEmotions && compareMode && compareResults.length > 0 && (
+          <div className="absolute top-3 right-3 w-48 rounded-lg overflow-hidden border border-white/10"
+            style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}>
+            <div className="px-3 pt-2.5 pb-2 space-y-2">
+              <div className="text-[9px] text-white/50 mb-1 border-b border-white/10 pb-1">M-Ensemble 비교 결과</div>
+              {compareResults.map(r => (
+                <div key={r.model_id} className="flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-medium text-white/90">{r.model_label.split(' ')[0]}</span>
+                    <span className="text-[9px] text-white/50 font-mono">{r.infer_ms}ms</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-bold text-white">{r.emotion}</span>
+                    <span className="text-[10px] text-white/80 tabular-nums">{(r.confidence * 100).toFixed(1)}%</span>
                   </div>
                 </div>
               ))}
@@ -437,7 +475,20 @@ export default function RealtimeTab() {
       {/* ── Controls ── */}
       <div className="px-4 py-4 space-y-3">
 
+        {/* Analysis Options */}
+        <div className="glass rounded-2xl p-1 flex gap-1 mb-1">
+          <button
+            onClick={() => setCompareMode(false)}
+            className={`flex-1 py-1.5 text-[10px] font-semibold rounded-xl transition-all duration-300 ${!compareMode ? 'bg-white/10 text-white' : 'text-muted-foreground/50'}`}
+          >단일 모델</button>
+          <button
+            onClick={() => setCompareMode(true)}
+            className={`flex-1 py-1.5 text-[10px] font-semibold rounded-xl transition-all duration-300 ${compareMode ? 'bg-white/10 text-white' : 'text-muted-foreground/50'}`}
+          >M-Ensemble 비교</button>
+        </div>
+
         {/* Model selector */}
+        {!compareMode && (
         <div className="flex items-center gap-3">
           <span className="text-[9px] text-white/30 uppercase tracking-widest shrink-0">분석 모드</span>
           <div className="relative flex-1">
@@ -446,6 +497,7 @@ export default function RealtimeTab() {
               onChange={e => { setSelectedModel(e.target.value); selectedModelRef.current = e.target.value }}
               className="w-full appearance-none bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs font-medium text-white focus:outline-none focus:border-white/20 cursor-pointer pr-6"
             >
+              <option value="" disabled hidden>선택해주세요</option>
               {availableModels.map(m => (
                 <option key={m.id} value={m.id} disabled={!m.loaded}>
                   {m.label}{!m.loaded ? ' (미로드)' : ''}
@@ -457,6 +509,7 @@ export default function RealtimeTab() {
             </svg>
           </div>
         </div>
+        )}
 
         {/* Toggle row */}
         <div className="grid grid-cols-2 gap-2">
