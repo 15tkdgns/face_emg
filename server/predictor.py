@@ -11,8 +11,7 @@ import time
 
 import cv2
 import numpy as np
-import torch
-import torch.nn.functional as F
+import onnxruntime as ort
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from dataset import EMOTIONS as ALL_EMOTIONS, SAMPLE_EMOTIONS, apply_clahe, extract_edge
@@ -80,7 +79,7 @@ MODEL_REGISTRY = {
     'efficientnet_v2_s': {
         'label':       'EfficientNetV2-S (신희원)',
         'description': '7개 감정 분류 · Acc 91.4%',
-        'ckpt':        '신희원/best_efficientnet_v2_s_clean.pth',
+        'ckpt':        '신희원/efficientnet_v2_s.onnx',
         'color':       '#EC4899',
         'val_acc':     0.914,
         'f1_per':      {e: 0.91 for e in EMOTIONS_7},
@@ -91,7 +90,7 @@ MODEL_REGISTRY = {
     'resnet18': {
         'label':       'ResNet-18 (강민구)',
         'description': '7개 감정 분류 · 실시간 추론 모델',
-        'ckpt':        'kang_mingoo/resnet18_emotion_best.pth',
+        'ckpt':        'kang_mingoo/resnet18.onnx',
         'color':       '#22C55E',
         'val_acc':     0.82,
         'f1_per':      {e: 0.80 for e in EMOTIONS_7},
@@ -128,8 +127,6 @@ class EmotionPredictor:
     def __init__(self, model_id: str):
         self.model_id    = model_id
         self.info        = MODEL_REGISTRY[model_id]
-        self.device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model       = None
         self.ort_session = None
         self.use_clahe   = False
         self.use_edge    = False
@@ -143,56 +140,8 @@ class EmotionPredictor:
             logger.warning(f'[{self.model_id}] 체크포인트 없음: {ckpt_path}')
             return False
         try:
-            if ckpt_path.endswith('.onnx'):
-                import onnxruntime as ort
-                self.ort_session = ort.InferenceSession(ckpt_path)
-                logger.info(f'[{self.model_id}] ONNX 로드 완료')
-                return True
-
-            ckpt = torch.load(ckpt_path, map_location=self.device)
-
-            # ── raw state_dict 처리 (메타데이터 없는 .pth) ────────
-            is_raw = isinstance(ckpt, dict) and 'state_dict' not in ckpt \
-                     and any(k.startswith(('conv', 'layer', 'bn', 'features')) for k in ckpt.keys())
-
-            if is_raw:
-                backbone    = self.info.get('backbone', 'resnet18')
-                num_classes = self.info.get('num_classes', len(self.emotions))
-                self.in_channels = 3
-                self.use_clahe   = False
-                self.use_edge    = False
-
-                from model import build_model
-                self.model = build_model(
-                    num_classes, backbone, pretrained=False, in_channels=3
-                ).to(self.device)
-
-                # build_model converts fc → Sequential(Dropout, Linear)
-                # but raw ckpt has fc.weight / fc.bias → remap to fc.1.weight / fc.1.bias
-                remapped = {}
-                for k, v in ckpt.items():
-                    if k == 'fc.weight':
-                        remapped['fc.1.weight'] = v
-                    elif k == 'fc.bias':
-                        remapped['fc.1.bias'] = v
-                    else:
-                        remapped[k] = v
-                self.model.load_state_dict(remapped)
-            else:
-                # ── wrapped checkpoint 처리 ────────
-                backbone         = ckpt.get('backbone', 'densenet121')
-                num_classes      = ckpt.get('num_classes', len(self.emotions))
-                self.in_channels = ckpt.get('in_channels', 3)
-                self.use_clahe   = ckpt.get('use_clahe', False)
-                self.use_edge    = ckpt.get('use_edge', False)
-
-                self.model = EmotionClassifier(
-                    num_classes, backbone, pretrained=False, in_channels=self.in_channels
-                ).to(self.device)
-                self.model.load_state_dict(ckpt['state_dict'])
-
-            self.model.eval()
-            logger.info(f'[{self.model_id}] 로드 완료 (classes={len(self.emotions)}, raw={is_raw})')
+            self.ort_session = ort.InferenceSession(ckpt_path)
+            logger.info(f'[{self.model_id}] ONNX 로드 완료')
             return True
         except Exception as e:
             logger.error(f'[{self.model_id}] 로드 실패: {e}')
@@ -208,29 +157,27 @@ class EmotionPredictor:
 
         face_f   = face.astype(np.float32) / 255.0
         face_norm = (face_f - MEAN) / STD
-        rgb_tensor = torch.from_numpy(face_norm.transpose(2, 0, 1))  # (3, H, W)
+        rgb_tensor = face_norm.transpose(2, 0, 1)  # (3, H, W)
 
         if self.use_edge:
             edge = extract_edge(face).astype(np.float32) / 255.0
-            edge_t = torch.from_numpy(edge).unsqueeze(0)
-            tensor = torch.cat([rgb_tensor, edge_t], dim=0)
+            edge_t = np.expand_dims(edge, axis=0)
+            tensor = np.concatenate([rgb_tensor, edge_t], axis=0)
         else:
             tensor = rgb_tensor
 
-        tensor = tensor.unsqueeze(0)
+        tensor = np.expand_dims(tensor, axis=0)
 
         t0 = time.time()
         if self.ort_session is not None:
             input_name = self.ort_session.get_inputs()[0].name
-            ort_inputs = {input_name: tensor.numpy()}
+            ort_inputs = {input_name: tensor}
             logits_np = self.ort_session.run(None, ort_inputs)[0]
-            logits = torch.from_numpy(logits_np)
-            probs  = F.softmax(logits, dim=1)[0].cpu().numpy()
+            # Softmax
+            e_x = np.exp(logits_np - np.max(logits_np, axis=1, keepdims=True))
+            probs = (e_x / e_x.sum(axis=1, keepdims=True))[0]
         else:
-            tensor = tensor.to(self.device)
-            with torch.no_grad():
-                logits = self.model(tensor)
-                probs  = F.softmax(logits, dim=1)[0].cpu().numpy()
+            probs = np.zeros(len(self.emotions), dtype=np.float32)
         elapsed = (time.time() - t0) * 1000
 
         emo_list = self.emotions
