@@ -15,7 +15,7 @@ COPY requirements.txt .
 
 # Install Python dependencies
 # --no-cache-dir helps keep the docker image size small
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Copy backend source code and model weights
 COPY server/ ./server/
