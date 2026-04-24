@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend source code and model weights
 COPY server/ ./server/
 COPY kang_mingoo/ ./kang_mingoo/
-COPY 박상훈/ ./박상훈/
+COPY park_sanghun/ ./park_sanghun/
 COPY 신희원/ ./신희원/
 COPY 한유승/ ./한유승/
 
