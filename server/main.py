@@ -53,13 +53,11 @@ async def startup():
 
 @app.get('/api/health')
 def health():
-    import torch
     return {
         'status':        'ok',
         'loaded_models': list(manager.predictors.keys()),
-        'device':        str(next(iter(manager.predictors.values())).device)
-                         if manager.predictors else 'none',
-        'cuda':          torch.cuda.is_available(),
+        'device':        'cpu (ONNX Runtime)',
+        'cuda':          False,
     }
 
 
@@ -221,69 +219,8 @@ _custom_models: dict = {}   # token -> EmotionPredictor
 
 @app.post('/api/custom-model/upload')
 async def upload_custom_model(file: UploadFile = File(...)):
-    """
-    .pth 파일 업로드 → 로드 후 token 반환.
-    token을 /api/custom-model/analyze 에 사용.
-    """
-    import traceback as tb, tempfile, uuid
-
-    if not file.filename.endswith('.pth'):
-        raise HTTPException(status_code=400, detail='.pth 파일만 허용됩니다.')
-
-    contents = await file.read()
-    if len(contents) > 200 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail='파일 크기 200MB 초과')
-
-    try:
-        import torch
-        # 임시 파일에 저장 후 로드
-        with tempfile.NamedTemporaryFile(suffix='.pth', delete=False) as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-        ckpt = torch.load(tmp_path, map_location='cpu')
-        os.unlink(tmp_path)
-
-        backbone    = ckpt.get('backbone', 'densenet121')
-        num_classes = ckpt.get('num_classes', 4)
-        in_channels = ckpt.get('in_channels', 3)
-        use_clahe   = ckpt.get('use_clahe', False)
-        use_edge    = ckpt.get('use_edge', False)
-        emotions    = ckpt.get('emotions', ['기쁨', '당황', '분노', '상처'])
-
-        from model import EmotionClassifier
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = EmotionClassifier(num_classes, backbone, pretrained=False,
-                                  in_channels=in_channels).to(device)
-        model.load_state_dict(ckpt['state_dict'])
-        model.eval()
-
-        token = str(uuid.uuid4())[:8]
-        _custom_models[token] = {
-            'model':       model,
-            'device':      device,
-            'backbone':    backbone,
-            'in_channels': in_channels,
-            'use_clahe':   use_clahe,
-            'use_edge':    use_edge,
-            'emotions':    emotions,
-            'filename':    file.filename,
-        }
-
-        return {
-            'token':       token,
-            'backbone':    backbone,
-            'num_classes': num_classes,
-            'in_channels': in_channels,
-            'use_clahe':   use_clahe,
-            'use_edge':    use_edge,
-            'emotions':    emotions,
-            'filename':    file.filename,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f'upload error:\n{tb.format_exc()}')
-        raise HTTPException(status_code=500, detail=f'모델 로드 실패: {e}')
+    """커스텀 모델 업로드 (ONNX 전환으로 비활성화)."""
+    raise HTTPException(status_code=501, detail='서버가 ONNX Runtime 전용으로 전환되어 커스텀 모델 업로드는 지원되지 않습니다.')
 
 
 @app.post('/api/custom-model/analyze')
@@ -291,71 +228,13 @@ async def analyze_custom(
     file:  UploadFile = File(...),
     token: str        = Form(...),
 ):
-    """
-    token에 해당하는 업로드 모델로 이미지 감정 분석.
-    """
-    import traceback as tb, time
-    import torch, torch.nn.functional as F
-
-    if token not in _custom_models:
-        raise HTTPException(status_code=404, detail='토큰이 없거나 만료됐습니다. 모델을 다시 업로드하세요.')
-
-    try:
-        m        = _custom_models[token]
-        model    = m['model']
-        device   = m['device']
-        emotions = m['emotions']
-
-        img_bgr = _decode_image(await file.read())
-        bbox, face_rgb, face_b64 = detect_and_crop(img_bgr)
-
-        # 전처리 (server/predictor.py 동일 로직)
-        from dataset import apply_clahe, extract_edge
-        face = cv2.resize(face_rgb, (224, 224))
-        if m['use_clahe']:
-            face = apply_clahe(face)
-        MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        norm = (face.astype(np.float32) / 255.0 - MEAN) / STD
-        import torch
-        tensor = torch.from_numpy(norm.transpose(2, 0, 1))
-        if m['use_edge']:
-            edge = extract_edge(face).astype(np.float32) / 255.0
-            tensor = torch.cat([tensor, torch.from_numpy(edge).unsqueeze(0)], dim=0)
-        tensor = tensor.unsqueeze(0).to(device)
-
-        t0 = time.time()
-        with torch.no_grad():
-            probs = F.softmax(model(tensor), dim=1)[0].cpu().numpy()
-        elapsed = (time.time() - t0) * 1000
-
-        pred = int(probs.argmax())
-        EMOJI = {'기쁨': '😄', '당황': '😳', '분노': '😡', '상처': '😢',
-                 '불안': '😰', '슬픔': '😢', '중립': '😐'}
-        emotion = emotions[pred]
-        return {
-            'emotion':    emotion,
-            'emoji':      EMOJI.get(emotion, '🤔'),
-            'confidence': float(probs[pred]),
-            'scores':     {e: float(probs[i]) for i, e in enumerate(emotions)},
-            'infer_ms':   round(elapsed, 1),
-            'face_b64':   face_b64,
-            'face_detected': bbox is not None,
-            'backbone':   m['backbone'],
-            'emotions':   emotions,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f'custom analyze error:\n{tb.format_exc()}')
-        raise HTTPException(status_code=500, detail=str(e))
+    """커스텀 모델 분석 (ONNX 전환으로 비활성화)."""
+    raise HTTPException(status_code=501, detail='커스텀 모델 분석 기능은 지원되지 않습니다.')
 
 
 @app.delete('/api/custom-model/{token}')
 def delete_custom_model(token: str):
     """업로드된 커스텀 모델 메모리에서 제거."""
-    if token in _custom_models:
-        del _custom_models[token]
     return {'status': 'deleted', 'token': token}
 
 
