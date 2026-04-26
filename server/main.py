@@ -168,45 +168,60 @@ async def analyze_base64(payload: dict):
     """
     payload: { image_b64, model_id (optional), compare (optional bool) }
     """
-    image_b64 = payload.get('image_b64', '')
-    model_id  = payload.get('model_id', 'densenet121')
-    compare   = payload.get('compare', False)
+    import traceback as tb
+    try:
+        image_b64 = payload.get('image_b64', '')
+        model_id  = payload.get('model_id', 'densenet121')
+        compare   = payload.get('compare', False)
 
-    if not image_b64:
-        raise HTTPException(status_code=400, detail='image_b64 없음')
+        if not image_b64:
+            raise HTTPException(status_code=400, detail='image_b64 없음')
 
-    if ',' in image_b64:
-        image_b64 = image_b64.split(',')[1]
-    img_bytes = base64.b64decode(image_b64)
-    img_bgr   = _decode_image(img_bytes)
+        if ',' in image_b64:
+            image_b64 = image_b64.split(',')[1]
+            
+        try:
+            img_bytes = base64.b64decode(image_b64)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f'Base64 디코딩 실패: {e}')
+            
+        img_bgr   = _decode_image(img_bytes)
 
-    bbox, landmarks, face_rgb, face_b64 = detect_with_landmarks(img_bgr)
+        bbox, landmarks, face_rgb, face_b64 = detect_with_landmarks(img_bgr)
 
-    if compare:
-        results = manager.predict_all(face_rgb)
-        return {
-            'results':       results,
-            'face_b64':      face_b64,
-            'face_detected': bbox is not None,
-            'bbox':          bbox,
-            'landmarks':     landmarks,
-        }
-    else:
-        if model_id not in manager.predictors:
-            loaded = list(manager.predictors.keys())
-            if not loaded:
-                raise HTTPException(status_code=503, detail='로드된 모델 없음')
-            model_id = loaded[0]
+        if compare:
+            results = manager.predict_all(face_rgb)
+            return {
+                'results':       results,
+                'face_b64':      face_b64,
+                'face_detected': bbox is not None,
+                'bbox':          bbox,
+                'landmarks':     landmarks,
+            }
+        else:
+            if model_id not in manager.predictors:
+                loaded = list(manager.predictors.keys())
+                if not loaded:
+                    raise HTTPException(status_code=503, detail='로드된 모델 없음')
+                model_id = loaded[0]
 
-        result = manager.predict_one(model_id, face_rgb)
-        return {
-            **result,
-            'face_b64':      face_b64,
-            'face_detected': bbox is not None,
-            'bbox':          bbox,
-            'landmarks':     landmarks,
-            'model_id':      model_id,
-        }
+            result = manager.predict_one(model_id, face_rgb)
+            if result is None:
+                raise HTTPException(status_code=503, detail=f'모델 추론 실패: {model_id}')
+                
+            return {
+                **result,
+                'face_b64':      face_b64,
+                'face_detected': bbox is not None,
+                'bbox':          bbox,
+                'landmarks':     landmarks,
+                'model_id':      model_id,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'analyze_base64 500:\n{tb.format_exc()}')
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── 내 모델 테스트 ────────────────────────────────────────────────────────────
